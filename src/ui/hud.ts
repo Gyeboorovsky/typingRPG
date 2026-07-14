@@ -72,7 +72,7 @@ export class Hud {
       e.lvlFills.forEach((fill, i) => {
         const frac = Math.max(0, Math.min(1, progress - i));
         fill.style.width = `${frac * 100}%`;
-        fill.style.boxShadow = frac > 0.05 ? `0 0 ${2 + frac * 8}px ${frac * 4}px var(--ui-xp)` : 'none';
+        fill.style.boxShadow = frac > 0.05 ? `0 0 ${2 + frac * 8}px ${frac * 4}px var(--xp)` : 'none';
       });
     });
     this.set('statpoints', p.statPoints, () => {
