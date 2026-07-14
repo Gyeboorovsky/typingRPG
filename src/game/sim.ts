@@ -64,6 +64,7 @@ function stepPlayer(state: GameState, dt: number): void {
       p.from = { ...p.pos };
       p.pos = { x: nx, y: ny };
       p.moveT = 0;
+      state.dirty = true; // position is part of the save
     }
   }
 }
