@@ -28,15 +28,21 @@ body { font-family: var(--font); color: var(--ui-text); }
 .hint { color: var(--ui-dim); font-size: 12px; }
 
 /* bars */
-#bars { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 4px; width: min(240px, 40vw); }
-.bar { position: relative; height: 18px; background: var(--ui-shadow); border: 1px solid var(--ui-border); border-radius: 4px; overflow: hidden; }
-.bar.xp { height: 10px; }
+#bars { position: absolute; top: 12px; left: 12px; display: flex; flex-direction: column; gap: 3px; width: min(240px, 40vw); }
+.bar { position: relative; height: 14px; background: var(--ui-shadow); border: 1px solid var(--ui-border); border-radius: 4px; overflow: hidden; }
 .bar .fill { height: 100%; width: 0%; transition: width 120ms linear; }
 .bar.hp .fill { background: var(--ui-hp); }
 .bar.mp .fill { background: var(--ui-mp); }
-.bar.xp .fill { background: var(--ui-xp); }
-.bar span { position: absolute; inset: 0; text-align: center; font-size: 11px; line-height: 17px; text-shadow: 0 1px 2px #000; }
-.bar.xp span { font-size: 9px; line-height: 9px; }
+.bar span { position: absolute; inset: 0; text-align: center; font-size: 10px; line-height: 13px; text-shadow: 0 1px 2px #000; }
+
+/* level progress: 4 segments = 4 stat points per level, one per 25% XP, fills like a bar */
+#lvl-row { display: flex; align-items: center; gap: 6px; }
+#xp-text { font-size: 10px; color: var(--ui-dim); text-shadow: 0 1px 2px #000; white-space: nowrap; }
+#lvl-circles { display: flex; gap: 3px; flex: 1; height: 9px; }
+.lvl-circle { flex: 1; height: 100%; border-radius: 3px; background: var(--ui-shadow); border: 1px solid var(--ui-border); overflow: hidden; }
+.lvl-fill { display: block; height: 100%; width: 0%; background: var(--ui-xp); transition: width 120ms linear, box-shadow 150ms ease; }
+#stats-btn { pointer-events: auto; background: var(--ui-panel); color: var(--ui-cur); border: 1px solid var(--ui-border); border-radius: 10px; padding: 1px 7px; font-size: 11px; font-weight: 700; cursor: pointer; animation: pulse 0.9s infinite alternate; }
+#stats-btn:hover { border-color: var(--ui-cur); }
 
 /* boss bar */
 #bossbar { position: absolute; top: 12px; left: 50%; transform: translateX(-50%); width: min(480px, 70vw); text-align: center; }
@@ -81,6 +87,18 @@ body { font-family: var(--font); color: var(--ui-text); }
 .slot.t4 { border-color: var(--ui-boss); }
 .slot .qty { position: absolute; bottom: 2px; right: 4px; color: var(--ui-cur); font-weight: 700; }
 .slot .icon { font-size: 18px; line-height: 1; }
+
+/* attributes panel */
+#statspanel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: 12px; padding: 16px 20px; text-align: center; pointer-events: auto; }
+#statspanel h2 { font-size: 16px; margin-bottom: 10px; }
+#stat-points-left { color: var(--ui-cur); font-size: 13px; margin-left: 4px; }
+#stat-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.stat-row { display: flex; align-items: center; gap: 10px; width: 160px; }
+.stat-name { width: 34px; text-align: left; color: var(--ui-dim); font-weight: 700; }
+.stat-val { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
+.stat-plus { pointer-events: auto; background: var(--ui-shadow); color: var(--ui-cur); border: 1px solid var(--ui-border); border-radius: 6px; width: 24px; height: 24px; font-size: 14px; font-weight: 700; cursor: pointer; }
+.stat-plus:hover:not(:disabled) { border-color: var(--ui-cur); }
+.stat-plus:disabled { opacity: 0.35; cursor: default; }
 
 /* death overlay */
 #death { position: absolute; inset: 0; background: #200a0acc; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }

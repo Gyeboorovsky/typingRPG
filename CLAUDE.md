@@ -32,6 +32,9 @@ cost now:
   speculatively — just keep `src/game/` pure (see Architecture) so it *can*
   later run authoritatively on a server without a rewrite.
 
+See "Multiplayer readiness" below for the concrete gaps between this
+prototype and that end goal.
+
 ## The game
 
 Isometric vector-graphics action RPG (Tibia-like view, Metin2-like mechanics).
@@ -72,11 +75,73 @@ shield phases. Progress autosaves to a real file on disk.
   backend picked at runtime: Tauri fs plugin → `%APPDATA%\com.gyeboorovsky.typingrpg\save.json`;
   browser → localStorage baseline + File System Access API (Chromium).
 - **Tuning**: all gameplay numbers live in `src/game/constants.ts`.
-- **Roadmap seams (not built yet)**: 3 more classes in `classes.ts` (ninja/sura/shaman),
-  item upgrading +0→+9 / crafting (fields already on `ItemDef`), merchants,
-  more maps, dungeon instances, multiplayer.
 - **Commands**: `npm run dev` (web dev), `npm test` (vitest, pure core),
   `npm run build`, `npx tauri dev` / `npx tauri build` (desktop).
+
+## Metin2 inspiration (roadmap — not built yet)
+
+Mechanics, maps, and professions should draw from Metin2's model rather than
+be invented from scratch. Nothing below exists in code yet; land the basic
+single-player version first (see Long-term vision).
+
+- **Classes**: 3 more in `classes.ts` (ninja/sura/shaman) alongside warrior.
+- **Stat points**: `Player` gains an allocatable stat point every **25% of
+  the XP needed for the next level** (4 points per level), spent on
+  Metin2-style attributes — **STR, VIT, INT, DEX** — each nudging derived
+  stats (STR→attack, VIT→HP/defense, INT→mana/magic power, DEX→attack
+  speed/typing radius or crit, tbd per class). Fields go on `Player` in
+  `src/game/types.ts`; the XP-fraction check lives next to the existing
+  level-up logic in `sim.ts`, threshold derived from `XP_CURVE` in
+  `constants.ts`.
+- **Item upgrading** +0→+9 and crafting (fields already reserved on
+  `ItemDef`), merchants/NPC shops.
+- **Maps**: more Metin2-style zones beyond the current one — exp-spot mob
+  clusters, tiered zones gated by level, a dungeon-style instance for the
+  boss (or bosses).
+- **Multiplayer**: shared world, other players visible, per the Long-term
+  vision above — the reason `src/game/` must stay a pure, server-portable
+  simulation.
+
+## Multiplayer readiness (not built yet)
+
+The gap between this single-player prototype and the MMO end goal, so future
+sessions don't have to rediscover it. Nothing below exists in code yet —
+documentation only, no server code should land speculatively.
+
+- **Authoritative server**: `src/game/sim.ts` is meant to be lifted onto a
+  Node/Bun process unmodified and run as the server tick, receiving player
+  inputs over WebSocket and broadcasting state deltas to clients. This is
+  *why* `src/game/` must stay pure (no DOM/canvas/`Date.now`, seeded RNG in
+  state, event-queue input) — that purity is what makes this lift possible
+  without a rewrite. This is the payoff the architecture has been paying for.
+- **Networking**: a WebSocket layer, snapshot/delta compression so clients
+  aren't sent full state every tick, and client-side interpolation for
+  rendering other players smoothly between server updates. Typing-combat hit
+  detection needs its own lag compensation — unlike turn-based or
+  tick-based combat, typing is latency-sensitive at the keystroke level, so
+  naive "wait for server ack" input handling will feel bad.
+- **Persistence**: move off local file/localStorage (see `src/save/`) onto a
+  real database — Postgres, or SQLite behind the server process — for
+  accounts, inventories, and shared world state. The current `src/save/`
+  backend split (Tauri fs / File System Access / localStorage) is a
+  single-player concern and doesn't carry over to server-side persistence.
+- **Auth**: none exists yet. Minimum viable: email/password or OAuth, plus
+  session tokens for the WebSocket connection.
+- **Anti-cheat**: the client currently trusts itself entirely (it computes
+  its own damage and reports it). Typing-speed combat is trivially bottable
+  client-side, so the server must independently validate input timing/rate
+  and compute damage itself — never just accept client-reported outcomes.
+- **Hosting**: GitHub Pages (static, free) stops being sufficient once a
+  persistent server is needed — see "Hosting" below, which only covers the
+  static client. The smallest realistic jump is a small VM (~$5–6/mo) or a
+  serverless WebSocket platform (Cloudflare Durable Objects, Fly.io) plus a
+  managed Postgres free tier. This breaks the "cheap to host" constraint in
+  Long-term vision and should be a deliberate, later decision — not
+  something that creeps in incidentally while building a feature.
+- **World scaling**: Metin2-style shared zones need spatial partitioning /
+  interest management (only sending players updates about nearby entities)
+  once player count per zone is non-trivial, or every client gets flooded
+  with irrelevant updates from the whole map.
 
 ## FIRST-RUN TASK — keep the `io_typingRPG/` handoff folder
 

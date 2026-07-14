@@ -1,5 +1,8 @@
-// DOM HUD overlay: bars, typing prompt, boss bar, toasts, inventory, death
-// screen. Reads state each frame but only touches the DOM when values change.
+// DOM HUD overlay: bars, typing prompt, boss bar, toasts, inventory,
+// attributes panel, death screen. Reads state each frame but only touches
+// the DOM when values change.
+import { STAT_IDS } from '../game/attributes';
+import type { StatId } from '../game/attributes';
 import { classOf, maxHp, maxMp } from '../game/classes';
 import { aggroed, radiusFor } from '../game/combat';
 import { XP_CURVE } from '../game/constants';
@@ -15,18 +18,32 @@ export class Hud {
   private els = {
     hpFill: $('hp-fill'), hpText: $('hp-text'),
     mpFill: $('mp-fill'), mpText: $('mp-text'),
-    xpFill: $('xp-fill'), xpText: $('xp-text'),
+    xpText: $('xp-text'),
+    lvlFills: [0, 1, 2, 3].map((i) => $(`lvl-c${i}`)),
+    statsBtn: $('stats-btn'),
     promptBox: $('prompt-box'), prompt: $('prompt'),
     pDone: $('p-done'), pCur: $('p-cur'), pRest: $('p-rest'),
     streak: $('streak'), radius: $('radius'), ultHint: $('ult-hint'),
     bossbar: $('bossbar'), bossName: $('boss-name'), bossFill: $('boss-fill'), bossBanner: $('boss-banner'),
     toasts: $('toasts'), inventory: $('inventory'), invGrid: $('inv-grid'),
+    statspanel: $('statspanel'), statPointsLeft: $('stat-points-left'),
+    statVals: Object.fromEntries(STAT_IDS.map((s) => [s, $(`stat-val-${s}`)])) as Record<StatId, HTMLElement>,
+    statPlusBtns: Array.from(document.querySelectorAll<HTMLButtonElement>('.stat-plus')),
     death: $('death'), saveDot: $('save-dot'),
   };
   private invOpen = false;
+  private statsOpen = false;
   private lastInvRev = -1;
   private lastFlash = 0;
   private cache: Record<string, string | number | boolean> = {};
+  onAllocateStat: (stat: StatId) => void = () => {};
+
+  constructor() {
+    this.els.statsBtn.addEventListener('click', () => this.statsOpen ? this.closeStats() : this.openStats());
+    for (const btn of this.els.statPlusBtns) {
+      btn.addEventListener('click', () => this.onAllocateStat(btn.dataset.stat as StatId));
+    }
+  }
 
   /** Set textContent/width only when the value changed since last frame. */
   private set(key: string, value: string | number | boolean, apply: () => void): void {
@@ -48,10 +65,21 @@ export class Hud {
       e.mpFill.style.width = `${(p.mp / mmp) * 100}%`;
       e.mpText.textContent = `${Math.floor(p.mp)} / ${mmp}`;
     });
-    this.set('xp', `${p.level}:${p.xp}`, () => {
-      e.xpFill.style.width = `${(p.xp / need) * 100}%`;
-      e.xpText.textContent = `Lv ${p.level}`;
+    this.set('xp', p.level, () => { e.xpText.textContent = `Lv ${p.level}`; });
+    // 4 segments = the exp bar itself (one per 25% = one stat point), each fills like a normal bar
+    this.set('lvlcircles', `${p.level}:${Math.round((p.xp / need) * 400)}`, () => {
+      const progress = (p.xp / need) * 4;
+      e.lvlFills.forEach((fill, i) => {
+        const frac = Math.max(0, Math.min(1, progress - i));
+        fill.style.width = `${frac * 100}%`;
+        fill.style.boxShadow = frac > 0.05 ? `0 0 ${2 + frac * 8}px ${frac * 4}px var(--ui-xp)` : 'none';
+      });
     });
+    this.set('statpoints', p.statPoints, () => {
+      e.statsBtn.classList.toggle('hidden', p.statPoints <= 0);
+      e.statsBtn.textContent = `+${p.statPoints}`;
+    });
+    if (this.statsOpen) this.syncStats(p);
 
     const c = state.combat;
     this.set('combat', !!c, () => e.promptBox.classList.toggle('hidden', !c));
@@ -123,6 +151,24 @@ export class Hud {
   closeInventory(): void {
     this.invOpen = false;
     this.els.inventory.classList.add('hidden');
+  }
+
+  openStats(): void {
+    this.statsOpen = true;
+    this.els.statspanel.classList.remove('hidden');
+  }
+
+  closeStats(): void {
+    this.statsOpen = false;
+    this.els.statspanel.classList.add('hidden');
+  }
+
+  private syncStats(p: GameState['player']): void {
+    this.els.statPointsLeft.textContent = `(${p.statPoints} to spend)`;
+    for (const stat of STAT_IDS) {
+      this.els.statVals[stat].textContent = String(p.stats[stat]);
+    }
+    for (const btn of this.els.statPlusBtns) btn.disabled = p.statPoints <= 0;
   }
 
   setSaveStatus(clean: boolean): void {

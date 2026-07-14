@@ -36,7 +36,8 @@ async function boot(): Promise<void> {
   const renderer = new Renderer(ctx);
   input.combatActive = () => state.combat !== null;
   input.onToggleInventory = () => hud.toggleInventory(state);
-  input.onCloseInventory = () => hud.closeInventory();
+  input.onCloseInventory = () => { hud.closeInventory(); hud.closeStats(); };
+  hud.onAllocateStat = (stat) => input.push({ type: 'allocateStat', stat });
   saver.onStatus = (clean) => hud.setSaveStatus(clean);
 
   // "Save to file" button: browser-only, Chromium-only

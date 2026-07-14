@@ -1,5 +1,7 @@
 // The fixed-timestep orchestrator. Pure: consumes an event queue, mutates
 // state, emits fx. A future server runs this exact function authoritatively.
+import { emptyStats } from './attributes';
+import type { StatId } from './attributes';
 import { classOf, maxHp, maxMp } from './classes';
 import { DROP_DESPAWN_SECONDS, PICKUP_RADIUS, PLAYER_RADIUS, PLAYER_SPEED } from './constants';
 import { resolveKeystroke, syncCombat, tryUltimate } from './combat';
@@ -14,7 +16,8 @@ export function newGame(seed: number): GameState {
     tick: 0, rng: seed | 0,
     player: {
       classId: 'warrior', pos: { ...SPAWN }, dir: 0,
-      hp: 0, mp: 0, level: 1, xp: 0, inventory: [], invRev: 0,
+      hp: 0, mp: 0, level: 1, xp: 0, stats: emptyStats(), statPoints: 0,
+      inventory: [], invRev: 0,
       dead: false, ultCooldown: 0, animT: 0,
     },
     mobs: [], drops: [], spots: SPOTS.map(() => ({ pending: [] })),
@@ -33,6 +36,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
     else if (e.type === 'char') resolveKeystroke(state, e.ch);
     else if (e.type === 'ult') tryUltimate(state);
     else if (e.type === 'respawn') respawnPlayer(state);
+    else if (e.type === 'allocateStat') allocateStat(state, e.stat);
   }
   const p = state.player;
   if (p.ultCooldown > 0) p.ultCooldown = Math.max(0, p.ultCooldown - dt);
@@ -89,6 +93,14 @@ function regen(state: GameState, dt: number): void {
   p.mp = Math.min(p.mp + cls.mpRegen * dt, maxMp(p));
 }
 
+function allocateStat(state: GameState, stat: StatId): void {
+  const p = state.player;
+  if (p.statPoints <= 0) return;
+  p.stats[stat]++;
+  p.statPoints--;
+  state.dirty = true;
+}
+
 function respawnPlayer(state: GameState): void {
   const p = state.player;
   if (!p.dead) return;
@@ -106,6 +118,7 @@ export function makeSave(state: GameState): SaveData {
     player: {
       classId: p.classId, level: p.level, xp: p.xp, hp: p.hp, mp: p.mp,
       pos: { ...p.pos }, inventory: p.inventory.map((s) => ({ ...s })),
+      stats: { ...p.stats }, statPoints: p.statPoints,
     },
     bossKilled: state.bossKilled,
   };
@@ -121,6 +134,8 @@ export function applySave(state: GameState, save: SaveData): void {
   const pos = save.player.pos;
   p.pos = isBlocked(Math.round(pos.x), Math.round(pos.y)) ? { ...SPAWN } : { ...pos };
   p.inventory = save.player.inventory.map((s) => ({ ...s }));
+  p.stats = save.player.stats ? { ...save.player.stats } : emptyStats();
+  p.statPoints = save.player.statPoints ?? 0;
   p.invRev++;
   state.bossKilled = save.bossKilled;
 }

@@ -13,7 +13,16 @@
       <div id="bars">
         <div class="bar hp"><div class="fill" id="hp-fill"></div><span id="hp-text"></span></div>
         <div class="bar mp"><div class="fill" id="mp-fill"></div><span id="mp-text"></span></div>
-        <div class="bar xp"><div class="fill" id="xp-fill"></div><span id="xp-text"></span></div>
+        <div id="lvl-row">
+          <span id="xp-text">Lv 1</span>
+          <div id="lvl-circles">
+            <div class="lvl-circle"><div class="lvl-fill" id="lvl-c0"></div></div>
+            <div class="lvl-circle"><div class="lvl-fill" id="lvl-c1"></div></div>
+            <div class="lvl-circle"><div class="lvl-fill" id="lvl-c2"></div></div>
+            <div class="lvl-circle"><div class="lvl-fill" id="lvl-c3"></div></div>
+          </div>
+          <button id="stats-btn" class="hidden" title="Spend attribute points">+0</button>
+        </div>
       </div>
       <div id="bossbar" class="hidden"><span id="boss-name"></span><div class="bar boss"><div class="fill" id="boss-fill"></div></div><div id="boss-banner" class="hidden"></div></div>
       <div id="prompt-box" class="hidden">
@@ -31,6 +40,16 @@
         <h2>Inventory</h2>
         <div id="inv-grid"></div>
         <p class="hint">Esc / Tab to close</p>
+      </div>
+      <div id="statspanel" class="hidden">
+        <h2>Attributes <span id="stat-points-left"></span></h2>
+        <div id="stat-rows">
+          <div class="stat-row"><span class="stat-name">VIT</span><span class="stat-val" id="stat-val-VIT"></span><button class="stat-plus" data-stat="VIT">+</button></div>
+          <div class="stat-row"><span class="stat-name">INT</span><span class="stat-val" id="stat-val-INT"></span><button class="stat-plus" data-stat="INT">+</button></div>
+          <div class="stat-row"><span class="stat-name">STR</span><span class="stat-val" id="stat-val-STR"></span><button class="stat-plus" data-stat="STR">+</button></div>
+          <div class="stat-row"><span class="stat-name">DEX</span><span class="stat-val" id="stat-val-DEX"></span><button class="stat-plus" data-stat="DEX">+</button></div>
+        </div>
+        <p class="hint">Esc to close</p>
       </div>
       <div id="death" class="hidden">
         <h1>You died</h1>

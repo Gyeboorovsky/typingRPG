@@ -1,4 +1,6 @@
 // All shared shapes of the pure simulation. No DOM, no canvas, no Date.
+import type { StatId } from './attributes';
+
 export type Vec2 = { x: number; y: number };
 export type Dir = 0 | 1 | 2 | 3; // 0 up 1 right 2 down 3 left, always screen-relative
 // World-space vectors for each screen-relative direction: with the isometric
@@ -63,6 +65,8 @@ export interface Player {
   dir: Dir;              // facing, for sprite/attack direction
   hp: number; mp: number;
   level: number; xp: number;
+  stats: Record<StatId, number>; // spent VIT/INT/STR/DEX points
+  statPoints: number;            // unspent points available to allocate
   inventory: ItemStack[];
   invRev: number;       // bumped on inventory change (UI rebuild hint)
   dead: boolean;
@@ -93,7 +97,8 @@ export type InputEvent =
   | { type: 'char'; ch: string }
   | { type: 'move'; dirs: Dir[] } // currently held dirs, newest last
   | { type: 'ult' }
-  | { type: 'respawn' };
+  | { type: 'respawn' }
+  | { type: 'allocateStat'; stat: StatId };
 
 export interface GroundDrop { id: number; defId: string; qty: number; pos: Vec2; age: number }
 
@@ -118,6 +123,7 @@ export interface SaveData {
   player: {
     classId: ClassId; level: number; xp: number; hp: number; mp: number;
     pos: Vec2; inventory: ItemStack[];
+    stats?: Record<StatId, number>; statPoints?: number;
   };
   bossKilled: boolean;
 }
