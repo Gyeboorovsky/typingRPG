@@ -14,7 +14,7 @@ export const DIR_VECS: readonly Vec2[] = [
 ];
 
 export type Tier = 1 | 2 | 3 | 4;
-export type ClassId = 'warrior' | 'ninja' | 'sura' | 'shaman';
+export type ClassId = 'warrior' | 'ninja' | 'wizard' | 'priest';
 
 export interface ClassDef {
   id: ClassId; name: string;
@@ -60,6 +60,7 @@ export interface SpawnSpot { defId: string; center: Vec2; count: number; radius:
 export interface SpotState { pending: number[] } // respawn countdowns in seconds
 
 export interface Player {
+  name: string;
   classId: ClassId;
   pos: Vec2;            // continuous world position (tile units)
   dir: Dir;              // facing, for sprite/attack direction
@@ -121,7 +122,7 @@ export interface SaveData {
   v: 1;
   savedAt: string;
   player: {
-    classId: ClassId; level: number; xp: number; hp: number; mp: number;
+    name: string; classId: ClassId; level: number; xp: number; hp: number; mp: number;
     pos: Vec2; inventory: ItemStack[];
     stats?: Record<StatId, number>; statPoints?: number;
   };

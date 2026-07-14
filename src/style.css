@@ -76,6 +76,29 @@ body { font-family: var(--font); color: var(--ui-text); }
 #save-dot.dirty { color: var(--ui-dim); }
 #save-file { background: var(--ui-panel); color: var(--ui-text); border: 1px solid var(--ui-border); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 #save-file:hover { border-color: var(--ui-cur); }
+#cs-open-btn { background: var(--ui-panel); color: var(--ui-text); border: 1px solid var(--ui-border); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+#cs-open-btn:hover { border-color: var(--ui-cur); }
+
+/* character select / manage screen */
+#charselect { position: absolute; inset: 0; background: #0a0712dd; display: flex; align-items: center; justify-content: center; pointer-events: auto; z-index: 10; }
+#cs-panel { background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: 14px; padding: 24px 28px; text-align: center; max-width: min(560px, 92vw); }
+#cs-panel h1 { font-size: 20px; margin-bottom: 16px; color: var(--ui-cur); }
+#cs-slots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 12px; }
+.cs-card { background: var(--ui-shadow); border: 1px solid var(--ui-border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 8px; min-height: 92px; justify-content: center; }
+.cs-name { font-weight: 700; }
+.cs-tag { color: var(--ui-good); font-size: 10px; font-weight: 400; }
+.cs-meta { color: var(--ui-dim); font-size: 12px; }
+.cs-actions { display: flex; gap: 6px; justify-content: center; margin-top: 4px; }
+.cs-actions button, .cs-create { background: var(--ui-panel); color: var(--ui-text); border: 1px solid var(--ui-border); border-radius: 6px; padding: 5px 10px; font-size: 12px; cursor: pointer; }
+.cs-actions button:hover { border-color: var(--ui-cur); }
+.cs-delete { color: var(--ui-bad); }
+.cs-input { background: var(--ui-shadow); color: var(--ui-text); border: 1px solid var(--ui-border); border-radius: 6px; padding: 5px 8px; font-size: 12px; text-align: center; }
+.cs-class-row { display: flex; flex-wrap: wrap; gap: 4px; justify-content: center; }
+.cs-class { background: var(--ui-shadow); color: var(--ui-dim); border: 1px solid var(--ui-border); border-radius: 6px; padding: 4px 8px; font-size: 11px; cursor: pointer; }
+.cs-class:hover { border-color: var(--ui-cur); }
+.cs-class.selected { color: var(--ui-cur); border-color: var(--ui-cur); background: var(--ui-panel); }
+.cs-cancel { color: var(--ui-dim); }
+@media (max-width: 500px) { #cs-slots { grid-template-columns: 1fr; } }
 
 /* inventory */
 #inventory { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: 12px; padding: 16px 20px; text-align: center; }

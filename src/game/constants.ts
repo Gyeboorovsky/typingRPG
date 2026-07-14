@@ -43,3 +43,4 @@ export const PICKUP_RADIUS = 0.75;
 
 // save
 export const AUTOSAVE_SECONDS = 10;
+export const MAX_CHARACTERS = 4;

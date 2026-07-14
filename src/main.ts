@@ -1,12 +1,14 @@
-// Bootstrap: canvas sizing, save loading, fixed-timestep game loop, wiring.
+// Bootstrap: canvas sizing, character select, save loading, fixed-timestep
+// game loop, wiring.
 import './style.css';
 import { SIM_DT } from './game/constants';
 import { applySave, newGame, update } from './game/sim';
-import type { GameState } from './game/types';
+import type { ClassId, GameState } from './game/types';
 import { Input } from './input';
 import { Renderer } from './render/renderer';
 import { isTauri, pickFileBackend, supportsFilePicker } from './save/backends';
 import { SaveManager } from './save/save';
+import { CharSelect } from './ui/charselect';
 import { Hud } from './ui/hud';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
@@ -24,21 +26,58 @@ function resize(): void {
 window.addEventListener('resize', resize);
 resize();
 
+// right-click is reserved for the app's own controls, not the browser menu
+window.addEventListener('contextmenu', (e) => e.preventDefault());
+
 async function boot(): Promise<void> {
   const state: GameState = newGame((Date.now() ^ (Math.random() * 0xffffffff)) | 0);
+  let blocked = true; // no character chosen yet — sim stays frozen behind the select screen
+
   const saver = new SaveManager();
-  const loaded = await saver.init();
-  if (loaded) applySave(state, loaded);
-  else void saver.saveNow(state); // create the save file right away
+  await saver.setup();
 
   const input = new Input();
   const hud = new Hud();
   const renderer = new Renderer(ctx);
-  input.combatActive = () => state.combat !== null;
-  input.onToggleInventory = () => hud.toggleInventory(state);
-  input.onCloseInventory = () => { hud.closeInventory(); hud.closeStats(); };
+  const charSelect = new CharSelect();
+
+  input.combatActive = () => !blocked && state.combat !== null;
+  input.onToggleInventory = () => { if (!blocked) hud.toggleInventory(state); };
+  input.onCloseInventory = () => { hud.closeInventory(); hud.closeStats(); charSelect.close(); };
   hud.onAllocateStat = (stat) => input.push({ type: 'allocateStat', stat });
   saver.onStatus = (clean) => hud.setSaveStatus(clean);
+
+  async function refreshCharSelect(): Promise<void> {
+    charSelect.render(await saver.listSlots());
+  }
+
+  async function playSlot(slot: number, existing: boolean, name?: string, classId?: ClassId): Promise<void> {
+    if (!blocked) saver.flush(state); // save whoever we're leaving
+    let fresh: GameState;
+    if (existing) {
+      const data = await saver.loadSlot(slot); // also marks slot as active
+      fresh = newGame((Date.now() ^ (Math.random() * 0xffffffff)) | 0);
+      if (data) applySave(fresh, data);
+    } else {
+      fresh = newGame((Date.now() ^ (Math.random() * 0xffffffff)) | 0, name, classId);
+      saver.setActiveSlot(slot);
+      void saver.saveNow(fresh);
+    }
+    Object.assign(state, fresh);
+    renderer.resetCamera();
+    charSelect.setActiveSlot(slot);
+    charSelect.closable = true;
+    charSelect.close();
+    blocked = false;
+    await refreshCharSelect();
+  }
+
+  charSelect.onPlay = (slot, existing, name, classId) => { void playSlot(slot, existing, name, classId); };
+  charSelect.onDelete = (slot) => { void saver.deleteSlot(slot).then(refreshCharSelect); };
+  charSelect.onOpenRequested = () => { void refreshCharSelect().then(() => charSelect.open()); };
+
+  await refreshCharSelect();
+  charSelect.open();
 
   // "Save to file" button: browser-only, Chromium-only
   const saveBtn = document.getElementById('save-file') as HTMLButtonElement;
@@ -54,9 +93,9 @@ async function boot(): Promise<void> {
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') saver.flush(state);
+    if (document.visibilityState === 'hidden' && !blocked) saver.flush(state);
   });
-  window.addEventListener('beforeunload', () => saver.flush(state));
+  window.addEventListener('beforeunload', () => { if (!blocked) saver.flush(state); });
 
   const STEP_MS = 1000 / 60;
   let acc = 0;
@@ -67,15 +106,17 @@ async function boot(): Promise<void> {
     last = now;
     let steps = 0;
     while (acc >= STEP_MS && steps < 5) {
-      update(state, input.drain(), SIM_DT);
+      if (!blocked) update(state, input.drain(), SIM_DT); else input.drain();
       steps++;
       acc -= STEP_MS;
     }
     if (steps === 5) acc = 0; // spiral-of-death guard
     const fx = state.fx;
     state.fx = [];
-    if (fx.some((f) => f.kind === 'levelup')) void saver.saveNow(state);
-    else saver.tick(state, steps * SIM_DT);
+    if (!blocked) {
+      if (fx.some((f) => f.kind === 'levelup')) void saver.saveNow(state);
+      else saver.tick(state, steps * SIM_DT);
+    }
     renderer.draw(state, fx, now / 1000, viewW, viewH);
     hud.sync(state, fx);
     requestAnimationFrame(frame);

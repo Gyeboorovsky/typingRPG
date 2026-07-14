@@ -84,7 +84,8 @@ Mechanics, maps, and professions should draw from Metin2's model rather than
 be invented from scratch. Nothing below exists in code yet; land the basic
 single-player version first (see Long-term vision).
 
-- **Classes**: 3 more in `classes.ts` (ninja/sura/shaman) alongside warrior.
+- **Classes**: `classes.ts` defines Warrior, Ninja, Wizard, Priest; only Warrior
+  is playable so far (selection UI is a future feature).
 - **Stat points**: `Player` gains an allocatable stat point every **25% of
   the XP needed for the next level** (4 points per level), spent on
   Metin2-style attributes — **STR, VIT, INT, DEX** — each nudging derived

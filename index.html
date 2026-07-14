@@ -34,6 +34,7 @@
       <div id="corner">
         <span id="save-dot" title="saved">●</span>
         <button id="save-file" class="hidden">Save to file</button>
+        <button id="cs-open-btn">Characters</button>
         <span class="hint">Tab — Inventory</span>
       </div>
       <div id="inventory" class="hidden">
@@ -56,6 +57,13 @@
         <p>Press <b>Enter</b> to respawn</p>
       </div>
       <div id="kbd-note" class="hidden">Best played with a physical keyboard</div>
+    </div>
+    <div id="charselect" class="hidden">
+      <div id="cs-panel">
+        <h1>Characters</h1>
+        <div id="cs-slots"></div>
+        <p class="hint">Pick a character to play. Max 4 slots.</p>
+      </div>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>
