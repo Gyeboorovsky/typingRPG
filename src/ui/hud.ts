@@ -57,6 +57,7 @@ export class Hud {
     const panel = this.els.statspanel, header = this.els.statsHeader;
     let dragging = false, dx = 0, dy = 0;
     header.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return; // let the close button handle its own click
       dragging = true;
       header.classList.add('dragging');
       header.setPointerCapture(e.pointerId);
