@@ -29,6 +29,7 @@ async function boot(): Promise<void> {
   const saver = new SaveManager();
   const loaded = await saver.init();
   if (loaded) applySave(state, loaded);
+  else void saver.saveNow(state); // create the save file right away
 
   const input = new Input();
   const hud = new Hud();
@@ -88,6 +89,17 @@ async function boot(): Promise<void> {
         press: (t: 'ult' | 'respawn') => input.push({ type: t }),
         move: (dirs: number[]) => input.push({ type: 'move', dirs: dirs as never }),
         step: (n: number) => { for (let i = 0; i < n; i++) update(state, input.drain(), SIM_DT); },
+        frame: (t = performance.now() / 1000, w?: number, h?: number) => {
+          if (w && h) { // render headless at a forced size (hidden-tab checks)
+            viewW = w; viewH = h;
+            canvas.width = w; canvas.height = h;
+            ctx.setTransform(1, 0, 0, 1, 0, 0);
+          }
+          const fx = state.fx;
+          state.fx = [];
+          renderer.draw(state, fx, t, viewW, viewH);
+          hud.sync(state, fx);
+        },
       },
     });
   }
