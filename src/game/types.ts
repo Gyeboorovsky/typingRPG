@@ -1,8 +1,14 @@
 // All shared shapes of the pure simulation. No DOM, no canvas, no Date.
 export type Vec2 = { x: number; y: number };
-export type Dir = 0 | 1 | 2 | 3; // 0 up(0,-1) 1 right(1,0) 2 down(0,1) 3 left(-1,0)
+export type Dir = 0 | 1 | 2 | 3; // 0 up 1 right 2 down 3 left, always screen-relative
+// World-space vectors for each screen-relative direction: with the isometric
+// projection screenX=(wx-wy), screenY=(wx+wy), moving "left" must decrease
+// wx and increase wy equally to move purely left on screen instead of
+// running parallel to a world grid line. Fixed to the current (unrotated)
+// camera; when camera rotation is added, rotate these by the camera's
+// facing angle instead of hardcoding them here.
 export const DIR_VECS: readonly Vec2[] = [
-  { x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 }, { x: -1, y: 0 },
+  { x: -1, y: -1 }, { x: 1, y: -1 }, { x: 1, y: 1 }, { x: -1, y: 1 },
 ];
 
 export type Tier = 1 | 2 | 3 | 4;
@@ -53,10 +59,8 @@ export interface SpotState { pending: number[] } // respawn countdowns in second
 
 export interface Player {
   classId: ClassId;
-  pos: Vec2;            // target tile of current hop (or standing tile)
-  from: Vec2 | null;    // hop origin while moving
-  moveT: number;        // 0..1 hop progress
-  dir: Dir;
+  pos: Vec2;            // continuous world position (tile units)
+  dir: Dir;              // facing, for sprite/attack direction
   hp: number; mp: number;
   level: number; xp: number;
   inventory: ItemStack[];
@@ -121,6 +125,4 @@ export interface SaveData {
 // Tiny shared math helpers
 export const dist = (a: Vec2, b: Vec2): number => Math.hypot(a.x - b.x, a.y - b.y);
 export const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
-export const lerpVec = (a: Vec2, b: Vec2, t: number): Vec2 => ({ x: lerp(a.x, b.x, t), y: lerp(a.y, b.y, t) });
-/** The player's world position, interpolated mid-hop. */
-export const playerWorldPos = (p: Player): Vec2 => (p.from ? lerpVec(p.from, p.pos, p.moveT) : p.pos);
+export const playerWorldPos = (p: Player): Vec2 => p.pos;

@@ -4,7 +4,7 @@ import {
   BOSS_RESPAWN_SECONDS, LEASH_DIST, MOB_RADIUS, MOB_SEPARATION, MOB_STOP_DIST,
   PACK_LINK_RADIUS, RESPAWN_MIN_PLAYER_DIST, RESPAWN_SECONDS,
 } from './constants';
-import { findFreeNear, isBlocked } from './map';
+import { circleBlocked, findFreeNear } from './map';
 import type { GameState, Mob, MobDef, SpawnSpot, Vec2 } from './types';
 import { dist, playerWorldPos } from './types';
 
@@ -107,14 +107,8 @@ function moveToward(m: Mob, target: Vec2, step: number): void {
   if (len < 1e-6) return;
   const nx = m.pos.x + (dx / len) * step;
   const ny = m.pos.y + (dy / len) * step;
-  if (!circleBlocked(nx, m.pos.y)) m.pos.x = nx; // axis-separated slide
-  if (!circleBlocked(m.pos.x, ny)) m.pos.y = ny;
-}
-
-function circleBlocked(x: number, y: number): boolean {
-  const r = MOB_RADIUS;
-  return isBlocked(Math.round(x - r), Math.round(y - r)) || isBlocked(Math.round(x + r), Math.round(y - r))
-      || isBlocked(Math.round(x - r), Math.round(y + r)) || isBlocked(Math.round(x + r), Math.round(y + r));
+  if (!circleBlocked(nx, m.pos.y, MOB_RADIUS)) m.pos.x = nx; // axis-separated slide
+  if (!circleBlocked(m.pos.x, ny, MOB_RADIUS)) m.pos.y = ny;
 }
 
 /** Soft pairwise push so packs don't collapse into one point. */
@@ -128,8 +122,8 @@ function separate(mobs: Mob[]): void {
       const push = (MOB_SEPARATION - d) / 2 / d;
       const ax = a.pos.x - dx * push, ay = a.pos.y - dy * push;
       const bx = b.pos.x + dx * push, by = b.pos.y + dy * push;
-      if (!circleBlocked(ax, ay)) { a.pos.x = ax; a.pos.y = ay; }
-      if (!circleBlocked(bx, by)) { b.pos.x = bx; b.pos.y = by; }
+      if (!circleBlocked(ax, ay, MOB_RADIUS)) { a.pos.x = ax; a.pos.y = ay; }
+      if (!circleBlocked(bx, by, MOB_RADIUS)) { b.pos.x = bx; b.pos.y = by; }
     }
   }
 }

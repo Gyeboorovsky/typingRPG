@@ -99,7 +99,7 @@ export class Renderer {
     {
       const p = state.player;
       const sx = projX(pp.x, pp.y) - cx, sy = projY(pp.x, pp.y) - cy;
-      ents.push({ d: pp.x + pp.y, draw: () => drawPlayer(ctx, sx, sy, t, p.dir, p.from !== null, p.animT, p.dead) });
+      ents.push({ d: pp.x + pp.y, draw: () => drawPlayer(ctx, sx, sy, t, p.dir, state.held.length > 0, p.animT, p.dead) });
     }
     ents.sort((a, b) => a.d - b.d);
     for (const e of ents) e.draw();

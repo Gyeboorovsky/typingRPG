@@ -4,7 +4,8 @@ export const SIM_DT = 1 / 60;
 // world / movement
 export const TILE_W = 64;
 export const TILE_H = 32;
-export const PLAYER_SPEED = 4.5;      // tiles per second (grid hops)
+export const PLAYER_SPEED = 4.5;      // tiles per second, free continuous movement
+export const PLAYER_RADIUS = 0.3;     // collision radius vs blocked tiles
 export const CAMERA_LERP = 0.15;
 
 // combat / typing

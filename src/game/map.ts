@@ -68,6 +68,12 @@ export const terrainAt = (x: number, y: number): number => terrain[idx(x, y)];
 export const isBlocked = (x: number, y: number): boolean =>
   x < 0 || y < 0 || x >= MAP_W || y >= MAP_H || blocked[idx(x, y)] === 1;
 
+/** Whether a circle of radius `r` centered at (x, y) overlaps a blocked tile. */
+export function circleBlocked(x: number, y: number, r: number): boolean {
+  return isBlocked(Math.round(x - r), Math.round(y - r)) || isBlocked(Math.round(x + r), Math.round(y - r))
+      || isBlocked(Math.round(x - r), Math.round(y + r)) || isBlocked(Math.round(x + r), Math.round(y + r));
+}
+
 /** Random free tile within `radius` of `center` (falls back to center). */
 export function findFreeNear(s: RngCarrier, center: Vec2, radius: number): Vec2 {
   for (let i = 0; i < 20; i++) {
