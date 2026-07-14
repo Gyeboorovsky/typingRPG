@@ -1,10 +1,10 @@
 // The fixed-timestep orchestrator. Pure: consumes an event queue, mutates
 // state, emits fx. A future server runs this exact function authoritatively.
 import { classOf, maxHp, maxMp } from './classes';
-import { DROP_DESPAWN_SECONDS, PICKUP_RADIUS, PLAYER_SPEED } from './constants';
+import { DROP_DESPAWN_SECONDS, PICKUP_RADIUS, PLAYER_RADIUS, PLAYER_SPEED } from './constants';
 import { resolveKeystroke, syncCombat, tryUltimate } from './combat';
 import { addToInventory, ITEMS } from './items';
-import { isBlocked, SPAWN } from './map';
+import { circleBlocked, isBlocked, SPAWN } from './map';
 import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
 import type { GameState, InputEvent, SaveData } from './types';
 import { DIR_VECS, dist, playerWorldPos } from './types';
@@ -13,7 +13,7 @@ export function newGame(seed: number): GameState {
   const state: GameState = {
     tick: 0, rng: seed | 0,
     player: {
-      classId: 'warrior', pos: { ...SPAWN }, from: null, moveT: 0, dir: 0,
+      classId: 'warrior', pos: { ...SPAWN }, dir: 0,
       hp: 0, mp: 0, level: 1, xp: 0, inventory: [], invRev: 0,
       dead: false, ultCooldown: 0, animT: 0,
     },
@@ -46,27 +46,23 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
   regen(state, dt);
 }
 
-/** Grid-hop movement: hops chain while a direction is held; newest key wins. */
+/** Free continuous movement: held keys sum to a direction vector (diagonals included). */
 function stepPlayer(state: GameState, dt: number): void {
   const p = state.player;
   if (p.dead) return;
-  if (p.from) {
-    p.moveT += dt * PLAYER_SPEED;
-    p.animT += dt;
-    if (p.moveT >= 1) { p.from = null; p.moveT = 0; }
-  }
-  if (!p.from && state.held.length > 0) {
-    const dir = state.held[state.held.length - 1];
-    p.dir = dir;
-    const v = DIR_VECS[dir];
-    const nx = p.pos.x + v.x, ny = p.pos.y + v.y;
-    if (!isBlocked(nx, ny)) {
-      p.from = { ...p.pos };
-      p.pos = { x: nx, y: ny };
-      p.moveT = 0;
-      state.dirty = true; // position is part of the save
-    }
-  }
+  if (state.held.length === 0) return;
+  let vx = 0, vy = 0;
+  for (const d of state.held) { vx += DIR_VECS[d].x; vy += DIR_VECS[d].y; }
+  const len = Math.hypot(vx, vy);
+  if (len < 1e-6) return;
+  vx /= len; vy /= len;
+  p.dir = state.held[state.held.length - 1];
+  const step = PLAYER_SPEED * dt;
+  const nx = p.pos.x + vx * step, ny = p.pos.y + vy * step;
+  if (!circleBlocked(nx, p.pos.y, PLAYER_RADIUS)) p.pos.x = nx; // axis-separated slide
+  if (!circleBlocked(p.pos.x, ny, PLAYER_RADIUS)) p.pos.y = ny;
+  p.animT += dt;
+  state.dirty = true; // position is part of the save
 }
 
 function stepDrops(state: GameState, dt: number): void {
@@ -98,8 +94,6 @@ function respawnPlayer(state: GameState): void {
   if (!p.dead) return;
   p.dead = false;
   p.pos = { ...SPAWN };
-  p.from = null;
-  p.moveT = 0;
   p.hp = maxHp(p);
   p.mp = maxMp(p);
 }
@@ -125,9 +119,7 @@ export function applySave(state: GameState, save: SaveData): void {
   p.hp = Math.min(Math.max(1, save.player.hp), maxHp(p));
   p.mp = Math.min(Math.max(0, save.player.mp), maxMp(p));
   const pos = save.player.pos;
-  p.pos = isBlocked(Math.round(pos.x), Math.round(pos.y)) ? { ...SPAWN } : { x: Math.round(pos.x), y: Math.round(pos.y) };
-  p.from = null;
-  p.moveT = 0;
+  p.pos = isBlocked(Math.round(pos.x), Math.round(pos.y)) ? { ...SPAWN } : { ...pos };
   p.inventory = save.player.inventory.map((s) => ({ ...s }));
   p.invRev++;
   state.bossKilled = save.bossKilled;

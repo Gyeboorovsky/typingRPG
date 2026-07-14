@@ -5,7 +5,7 @@ import {
   damageMob, grantXp, radiusFor, resolveKeystroke, syncCombat,
 } from './combat';
 import {
-  BOSS_ENRAGE_TYPO_MULT, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX, SIM_DT, XP_CURVE,
+  BOSS_ENRAGE_TYPO_MULT, PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX, SIM_DT, XP_CURVE,
 } from './constants';
 import { rollDrops } from './loot';
 import { isBlocked } from './map';
@@ -133,12 +133,17 @@ describe('loot and xp', () => {
 });
 
 describe('movement and map', () => {
-  it('grid-hops toward a held direction', () => {
+  it('moves continuously toward a held direction, screen-relative', () => {
     const s = newGame(3);
     s.mobs = [];
-    update(s, [{ type: 'move', dirs: [0] }], SIM_DT); // hold ArrowUp
+    const start = { ...s.player.pos };
+    update(s, [{ type: 'move', dirs: [0] }], SIM_DT); // hold ArrowUp (screen-up)
     for (let i = 0; i < 20; i++) update(s, [], SIM_DT); // ~0.35 s
-    expect(s.player.pos.y).toBe(37); // two hops at 4.5 tiles/s
+    // Screen-up is world (-1,-1) normalized, so up moves x and y equally —
+    // parallel to the screen's vertical axis, not a single world grid line.
+    const per = (21 * SIM_DT * PLAYER_SPEED) * Math.SQRT1_2;
+    expect(s.player.pos.x).toBeCloseTo(start.x - per, 5);
+    expect(s.player.pos.y).toBeCloseTo(start.y - per, 5);
   });
 
   it('map blocks borders and water, spawn area is free', () => {
