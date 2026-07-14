@@ -78,6 +78,8 @@ body { font-family: var(--font); color: var(--ui-text); }
 #save-file:hover { border-color: var(--ui-cur); }
 #cs-open-btn { background: var(--ui-panel); color: var(--ui-text); border: 1px solid var(--ui-border); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
 #cs-open-btn:hover { border-color: var(--ui-cur); }
+#stats-open-btn { background: var(--ui-panel); color: var(--ui-text); border: 1px solid var(--ui-border); border-radius: 6px; padding: 4px 10px; font-size: 12px; cursor: pointer; }
+#stats-open-btn:hover { border-color: var(--ui-cur); }
 
 /* character select / manage screen */
 #charselect { position: absolute; inset: 0; background: #0a0712dd; display: flex; align-items: center; justify-content: center; pointer-events: auto; z-index: 10; }
@@ -111,15 +113,28 @@ body { font-family: var(--font); color: var(--ui-text); }
 .slot .qty { position: absolute; bottom: 2px; right: 4px; color: var(--ui-cur); font-weight: 700; }
 .slot .icon { font-size: 18px; line-height: 1; }
 
-/* attributes panel */
-#statspanel { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: 12px; padding: 16px 20px; text-align: center; pointer-events: auto; }
-#statspanel h2 { font-size: 16px; margin-bottom: 10px; }
-#stat-points-left { color: var(--ui-cur); font-size: 13px; margin-left: 4px; }
-#stat-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
-.stat-row { display: flex; align-items: center; gap: 10px; width: 160px; }
-.stat-name { width: 34px; text-align: left; color: var(--ui-dim); font-weight: 700; }
-.stat-val { flex: 1; text-align: right; font-variant-numeric: tabular-nums; }
-.stat-plus { pointer-events: auto; background: var(--ui-shadow); color: var(--ui-cur); border: 1px solid var(--ui-border); border-radius: 6px; width: 24px; height: 24px; font-size: 14px; font-weight: 700; cursor: pointer; }
+/* character window: statistics (spendable) + attributes (derived), draggable, non-modal */
+#statspanel {
+  position: absolute; top: 90px; left: 20px; width: 220px;
+  background: var(--ui-panel); border: 1px solid var(--ui-border); border-radius: 12px;
+  pointer-events: auto; box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+}
+#stats-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; cursor: grab; border-bottom: 1px solid var(--ui-border);
+  font-weight: 700; font-size: 13px; user-select: none;
+}
+#stats-header.dragging { cursor: grabbing; }
+#stats-close-btn { background: none; border: none; color: var(--ui-dim); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 2px; }
+#stats-close-btn:hover { color: var(--ui-text); }
+#stats-body { padding: 12px 14px; display: flex; flex-direction: column; gap: 14px; }
+#stats-body h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ui-dim); margin-bottom: 6px; text-align: left; }
+#stat-points-left { color: var(--ui-cur); font-size: 11px; text-transform: none; letter-spacing: normal; margin-left: 4px; }
+#stat-rows, #attr-rows { display: flex; flex-direction: column; gap: 6px; }
+.stat-row, .attr-row { display: flex; align-items: center; gap: 10px; }
+.stat-name, .attr-name { flex: 1; text-align: left; color: var(--ui-dim); font-weight: 700; font-size: 12px; }
+.stat-val, .attr-val { text-align: right; font-variant-numeric: tabular-nums; font-size: 12px; }
+.stat-plus { pointer-events: auto; background: var(--ui-shadow); color: var(--ui-cur); border: 1px solid var(--ui-border); border-radius: 6px; width: 22px; height: 22px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .stat-plus:hover:not(:disabled) { border-color: var(--ui-cur); }
 .stat-plus:disabled { opacity: 0.35; cursor: default; }
 

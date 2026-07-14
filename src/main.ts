@@ -74,7 +74,9 @@ async function boot(): Promise<void> {
 
   charSelect.onPlay = (slot, existing, name, classId) => { void playSlot(slot, existing, name, classId); };
   charSelect.onDelete = (slot) => { void saver.deleteSlot(slot).then(refreshCharSelect); };
-  charSelect.onOpenRequested = () => { void refreshCharSelect().then(() => charSelect.open()); };
+  // Open synchronously, then refresh content in place — chaining .open() after
+  // the async listSlots() would race a concurrent Play click's close().
+  charSelect.onOpenRequested = () => { charSelect.open(); void refreshCharSelect(); };
 
   await refreshCharSelect();
   charSelect.open();
