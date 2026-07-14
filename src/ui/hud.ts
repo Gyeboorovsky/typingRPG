@@ -1,5 +1,8 @@
-// DOM HUD overlay: bars, typing prompt, boss bar, toasts, inventory, death
-// screen. Reads state each frame but only touches the DOM when values change.
+// DOM HUD overlay: bars, typing prompt, boss bar, toasts, inventory, the
+// draggable statistics/attributes window, death screen. Reads state each
+// frame but only touches the DOM when values change.
+import { effectiveAttributes, STAT_IDS } from '../game/attributes';
+import type { AttributeId, StatId } from '../game/attributes';
 import { classOf, maxHp, maxMp } from '../game/classes';
 import { aggroed, radiusFor } from '../game/combat';
 import { XP_CURVE } from '../game/constants';
@@ -10,23 +13,69 @@ import type { Fx, GameState } from '../game/types';
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 
 const INV_SLOTS = 30;
+const ATTR_IDS: AttributeId[] = ['health', 'energy', 'defense', 'physicalDamage', 'magicDamage', 'movementSpeed', 'dodge'];
 
 export class Hud {
   private els = {
     hpFill: $('hp-fill'), hpText: $('hp-text'),
     mpFill: $('mp-fill'), mpText: $('mp-text'),
-    xpFill: $('xp-fill'), xpText: $('xp-text'),
+    xpText: $('xp-text'),
+    lvlFills: [0, 1, 2, 3].map((i) => $(`lvl-c${i}`)),
+    statsBtn: $('stats-btn'),
     promptBox: $('prompt-box'), prompt: $('prompt'),
     pDone: $('p-done'), pCur: $('p-cur'), pRest: $('p-rest'),
     streak: $('streak'), radius: $('radius'), ultHint: $('ult-hint'),
     bossbar: $('bossbar'), bossName: $('boss-name'), bossFill: $('boss-fill'), bossBanner: $('boss-banner'),
     toasts: $('toasts'), inventory: $('inventory'), invGrid: $('inv-grid'),
+    statspanel: $('statspanel'), statsHeader: $('stats-header'),
+    statsOpenBtn: $('stats-open-btn'), statsCloseBtn: $('stats-close-btn'),
+    statPointsLeft: $('stat-points-left'),
+    statVals: Object.fromEntries(STAT_IDS.map((s) => [s, $(`stat-val-${s}`)])) as Record<StatId, HTMLElement>,
+    statPlusBtns: Array.from(document.querySelectorAll<HTMLButtonElement>('.stat-plus')),
+    attrVals: Object.fromEntries(ATTR_IDS.map((a) => [a, $(`attr-val-${a}`)])) as Record<AttributeId, HTMLElement>,
     death: $('death'), saveDot: $('save-dot'),
   };
   private invOpen = false;
+  private statsOpen = false;
   private lastInvRev = -1;
   private lastFlash = 0;
   private cache: Record<string, string | number | boolean> = {};
+  onAllocateStat: (stat: StatId) => void = () => {};
+
+  constructor() {
+    this.els.statsBtn.addEventListener('click', () => this.statsOpen ? this.closeStats() : this.openStats());
+    this.els.statsOpenBtn.addEventListener('click', () => this.statsOpen ? this.closeStats() : this.openStats());
+    this.els.statsCloseBtn.addEventListener('click', () => this.closeStats());
+    for (const btn of this.els.statPlusBtns) {
+      btn.addEventListener('click', () => this.onAllocateStat(btn.dataset.stat as StatId));
+    }
+    this.initDrag();
+  }
+
+  /** Drag the character window by its header; position is clamped to stay on screen. */
+  private initDrag(): void {
+    const panel = this.els.statspanel, header = this.els.statsHeader;
+    let dragging = false, dx = 0, dy = 0;
+    header.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return; // let the close button handle its own click
+      dragging = true;
+      header.classList.add('dragging');
+      header.setPointerCapture(e.pointerId);
+      const r = panel.getBoundingClientRect();
+      dx = e.clientX - r.left;
+      dy = e.clientY - r.top;
+    });
+    header.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const maxX = window.innerWidth - panel.offsetWidth;
+      const maxY = window.innerHeight - panel.offsetHeight;
+      panel.style.left = `${Math.max(0, Math.min(maxX, e.clientX - dx))}px`;
+      panel.style.top = `${Math.max(0, Math.min(maxY, e.clientY - dy))}px`;
+    });
+    const stop = (): void => { dragging = false; header.classList.remove('dragging'); };
+    header.addEventListener('pointerup', stop);
+    header.addEventListener('pointercancel', stop);
+  }
 
   /** Set textContent/width only when the value changed since last frame. */
   private set(key: string, value: string | number | boolean, apply: () => void): void {
@@ -48,10 +97,21 @@ export class Hud {
       e.mpFill.style.width = `${(p.mp / mmp) * 100}%`;
       e.mpText.textContent = `${Math.floor(p.mp)} / ${mmp}`;
     });
-    this.set('xp', `${p.level}:${p.xp}`, () => {
-      e.xpFill.style.width = `${(p.xp / need) * 100}%`;
-      e.xpText.textContent = `Lv ${p.level}`;
+    this.set('xp', p.level, () => { e.xpText.textContent = `Lv ${p.level}`; });
+    // 4 segments = the exp bar itself (one per 25% = one stat point), each fills like a normal bar
+    this.set('lvlcircles', `${p.level}:${Math.round((p.xp / need) * 400)}`, () => {
+      const progress = (p.xp / need) * 4;
+      e.lvlFills.forEach((fill, i) => {
+        const frac = Math.max(0, Math.min(1, progress - i));
+        fill.style.width = `${frac * 100}%`;
+        fill.style.boxShadow = frac > 0.05 ? `0 0 ${2 + frac * 8}px ${frac * 4}px var(--ui-xp)` : 'none';
+      });
     });
+    this.set('statpoints', p.statPoints, () => {
+      e.statsBtn.classList.toggle('hidden', p.statPoints <= 0);
+      e.statsBtn.textContent = `+${p.statPoints}`;
+    });
+    if (this.statsOpen) this.syncStats(p);
 
     const c = state.combat;
     this.set('combat', !!c, () => e.promptBox.classList.toggle('hidden', !c));
@@ -123,6 +183,30 @@ export class Hud {
   closeInventory(): void {
     this.invOpen = false;
     this.els.inventory.classList.add('hidden');
+  }
+
+  openStats(): void {
+    this.statsOpen = true;
+    this.els.statspanel.classList.remove('hidden');
+  }
+
+  closeStats(): void {
+    this.statsOpen = false;
+    this.els.statspanel.classList.add('hidden');
+  }
+
+  private syncStats(p: GameState['player']): void {
+    this.els.statPointsLeft.textContent = `(${p.statPoints} to spend)`;
+    for (const stat of STAT_IDS) {
+      this.els.statVals[stat].textContent = String(p.stats[stat]);
+    }
+    for (const btn of this.els.statPlusBtns) btn.disabled = p.statPoints <= 0;
+
+    const attrs = effectiveAttributes(p.classId, p.stats);
+    for (const attr of ATTR_IDS) {
+      const v = attrs[attr];
+      this.els.attrVals[attr].textContent = attr === 'dodge' ? `${v.toFixed(1)}%` : String(Math.round(v));
+    }
   }
 
   setSaveStatus(clean: boolean): void {

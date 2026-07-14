@@ -1,5 +1,6 @@
 // The heart of the game: per-keystroke resolution, streak → AoE radius,
 // ultimates, boss shield/enrage, XP and kills.
+import { statPointsEarned, STAT_IDS } from './attributes';
 import { classOf, maxHp, maxMp } from './classes';
 import {
   BOSS_ENRAGE_HP, BOSS_ENRAGE_TYPO_MULT, BOSS_SHIELD_AT, PROMPT_MP_REWARD,
@@ -121,6 +122,8 @@ export function grantXp(state: GameState, amount: number): void {
     p.mp = maxMp(p);
     state.fx.push({ kind: 'levelup', level: p.level });
   }
+  const spent = STAT_IDS.reduce((sum, s) => sum + p.stats[s], 0);
+  p.statPoints = statPointsEarned(p.level, p.xp, XP_CURVE(p.level)) - spent;
   state.dirty = true;
 }
 

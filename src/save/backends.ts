@@ -1,47 +1,54 @@
 // The three ways a save reaches disk:
-//  - tauri: real file in %APPDATA%\com.gyeboorovsky.typingrpg\save.json
-//  - file:  real file the user picked via the File System Access API (Chromium)
-//  - local: localStorage baseline, always written in the browser
+//  - tauri: real files in %APPDATA%\com.gyeboorovsky.typingrpg\save-{slot}.json
+//  - file:  a single real file the user picked via the File System Access API
+//           (Chromium) — bound to whichever character is active, not slotted
+//  - local: localStorage baseline, always written in the browser, one key per slot
 import type { SaveData } from '../game/types';
 
 export interface SaveBackend {
   readonly name: 'tauri' | 'file' | 'local';
-  load(): Promise<SaveData | null>;
-  save(d: SaveData): Promise<void>;
+  load(slot: number): Promise<SaveData | null>;
+  save(slot: number, d: SaveData): Promise<void>;
+  delete(slot: number): Promise<void>;
 }
 
-const LS_KEY = 'typingRPG.save';
+const LS_PREFIX = 'typingRPG.save.';
 
 export const isTauri = (): boolean => '__TAURI_INTERNALS__' in window;
 
 // --- localStorage ---
 export const localBackend: SaveBackend = {
   name: 'local',
-  async load() {
-    const raw = localStorage.getItem(LS_KEY);
+  async load(slot) {
+    const raw = localStorage.getItem(LS_PREFIX + slot);
     return raw ? (JSON.parse(raw) as SaveData) : null;
   },
-  async save(d) { localStorage.setItem(LS_KEY, JSON.stringify(d)); },
+  async save(slot, d) { localStorage.setItem(LS_PREFIX + slot, JSON.stringify(d)); },
+  async delete(slot) { localStorage.removeItem(LS_PREFIX + slot); },
 };
 
 /** Synchronous write for beforeunload, where async won't finish. */
-export function localSaveSync(d: SaveData): void {
-  localStorage.setItem(LS_KEY, JSON.stringify(d));
+export function localSaveSync(slot: number, d: SaveData): void {
+  localStorage.setItem(LS_PREFIX + slot, JSON.stringify(d));
 }
 
 // --- Tauri fs plugin (dynamic import so web bundles never fetch it) ---
 export async function tauriBackend(): Promise<SaveBackend> {
   const fs = await import('@tauri-apps/plugin-fs');
   const opts = { baseDir: fs.BaseDirectory.AppData };
+  const fileOf = (slot: number): string => `save-${slot}.json`;
   return {
     name: 'tauri',
-    async load() {
-      try { return JSON.parse(await fs.readTextFile('save.json', opts)) as SaveData; }
+    async load(slot) {
+      try { return JSON.parse(await fs.readTextFile(fileOf(slot), opts)) as SaveData; }
       catch { return null; }
     },
-    async save(d) {
+    async save(slot, d) {
       try { await fs.mkdir('', { ...opts, recursive: true }); } catch { /* already exists */ }
-      await fs.writeTextFile('save.json', JSON.stringify(d, null, 2), opts);
+      await fs.writeTextFile(fileOf(slot), JSON.stringify(d, null, 2), opts);
+    },
+    async delete(slot) {
+      try { await fs.remove(fileOf(slot), opts); } catch { /* already gone */ }
     },
   };
 }
@@ -59,6 +66,8 @@ declare global {
 
 export const supportsFilePicker = (): boolean => typeof window.showSaveFilePicker === 'function';
 
+/** Bound to one physical file the user picked — slot is ignored, it always
+ *  tracks whichever character is currently active. */
 function fileBackendFrom(h: FileSystemFileHandle): SaveBackend {
   return {
     name: 'file',
@@ -68,11 +77,12 @@ function fileBackendFrom(h: FileSystemFileHandle): SaveBackend {
         return text.trim() ? (JSON.parse(text) as SaveData) : null;
       } catch { return null; }
     },
-    async save(d) {
+    async save(_slot, d) {
       const w = await h.createWritable();
       await w.write(JSON.stringify(d, null, 2));
       await w.close();
     },
+    async delete() { /* user owns this file; nothing to do */ },
   };
 }
 

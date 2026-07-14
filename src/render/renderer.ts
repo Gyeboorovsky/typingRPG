@@ -29,6 +29,9 @@ export class Renderer {
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
+  /** Snap the camera to the player instead of gliding, e.g. after switching characters. */
+  resetCamera(): void { this.camInit = false; }
+
   draw(state: GameState, fx: Fx[], t: number, viewW: number, viewH: number): void {
     const ctx = this.ctx;
     const pp = playerWorldPos(state.player);
@@ -99,7 +102,7 @@ export class Renderer {
     {
       const p = state.player;
       const sx = projX(pp.x, pp.y) - cx, sy = projY(pp.x, pp.y) - cy;
-      ents.push({ d: pp.x + pp.y, draw: () => drawPlayer(ctx, sx, sy, t, p.dir, state.held.length > 0, p.animT, p.dead) });
+      ents.push({ d: pp.x + pp.y, draw: () => drawPlayer(ctx, sx, sy, t, p.dir, state.held.length > 0, p.animT, p.dead, p.classId) });
     }
     ents.sort((a, b) => a.d - b.d);
     for (const e of ents) e.draw();
