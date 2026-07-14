@@ -4,5 +4,5 @@ import { defineConfig } from 'vite';
 export default defineConfig({
   base: process.env.TAURI_ENV_PLATFORM ? '/' : '/typingRPG/',
   build: { target: 'es2022' },
-  server: { port: 5173, strictPort: true },
+  server: { port: Number(process.env.PORT) || 5173 },
 });

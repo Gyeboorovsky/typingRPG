@@ -1,0 +1,25 @@
+// Single source of truth for world (canvas) colors. UI colors live in style.css.
+export const PAL = {
+  grassA: '#5cb85c', grassB: '#55ac55',
+  sandA: '#d9c184', sandB: '#d2b97a',
+  waterA: '#3b7dd8', waterB: '#4f8fe4',
+  tileEdge: 'rgba(0,0,0,0.08)',
+  treeTrunk: '#7a5230', treeLeafA: '#2e7d4f', treeLeafB: '#266b43',
+  rockA: '#8d8d99', rockB: '#72727e',
+  shadow: 'rgba(0,0,0,0.25)',
+
+  skin: '#e8b98a', hair: '#4a3220',
+  body: '#8c2f2f', bodyDark: '#6d2424', legs: '#3f3a5a',
+  sword: '#cfd6e4', swordEdge: '#f2f6fc', hilt: '#7a5230',
+
+  slime: '#59c8a0', slimeDark: '#3da181', eye: '#1c2430',
+  boar: '#8a5a3b', boarDark: '#6e4730', tusk: '#f0ead8', snout: '#b97f57',
+  cultist: '#4a3a68', cultistDark: '#372b4f', cultistEye: '#c94fe0',
+  boss: '#8b2fc9', bossDark: '#691fa0', horn: '#e8d9a0',
+  enrage: 'rgba(255,60,60,0.4)', shieldRing: '#5fc9f0',
+
+  ring: '#ffd75e',
+  mobBarBack: 'rgba(0,0,0,0.55)', mobBarFill: '#e0484f',
+  dmgText: '#ffffff', hurtText: '#ff6b6b', xpText: '#ffd75e',
+  burst: '#ffd75e', shieldBurst: '#5fc9f0',
+};
