@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Typing RPG</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect x='2' y='2' width='28' height='28' rx='6' fill='%232b2337'/><text x='16' y='23' font-size='18' text-anchor='middle' fill='%23ffd75e' font-family='monospace' font-weight='bold'>T</text></svg>" />
+</head>
+<body>
+  <div id="app">
+    <canvas id="game"></canvas>
+    <div id="hud">
+      <div id="bars">
+        <div class="bar hp"><div class="fill" id="hp-fill"></div><span id="hp-text"></span></div>
+        <div class="bar mp"><div class="fill" id="mp-fill"></div><span id="mp-text"></span></div>
+        <div class="bar xp"><div class="fill" id="xp-fill"></div><span id="xp-text"></span></div>
+      </div>
+      <div id="bossbar" class="hidden"><span id="boss-name"></span><div class="bar boss"><div class="fill" id="boss-fill"></div></div><div id="boss-banner" class="hidden"></div></div>
+      <div id="prompt-box" class="hidden">
+        <div id="prompt"><span id="p-done"></span><span id="p-cur"></span><span id="p-rest"></span></div>
+        <div id="combat-info"><span id="streak"></span><span id="radius"></span></div>
+        <div id="ult-hint" class="hidden"></div>
+      </div>
+      <div id="toasts"></div>
+      <div id="corner">
+        <span id="save-dot" title="saved">●</span>
+        <button id="save-file" class="hidden">Save to file</button>
+        <span class="hint">Tab — Inventory</span>
+      </div>
+      <div id="inventory" class="hidden">
+        <h2>Inventory</h2>
+        <div id="inv-grid"></div>
+        <p class="hint">Esc / Tab to close</p>
+      </div>
+      <div id="death" class="hidden">
+        <h1>You died</h1>
+        <p>Press <b>Enter</b> to respawn</p>
+      </div>
+      <div id="kbd-note" class="hidden">Best played with a physical keyboard</div>
+    </div>
+  </div>
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
