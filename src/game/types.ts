@@ -119,7 +119,10 @@ export type InputEvent =
   | { type: 'move'; dirs: Dir[] } // currently held dirs, newest last
   | { type: 'ult' }
   | { type: 'respawn' }
-  | { type: 'allocateStat'; stat: StatId };
+  | { type: 'allocateStat'; stat: StatId }
+  | { type: 'equip'; index: number }         // inventory[index] → its slot
+  | { type: 'unequip'; slot: EquipSlot }     // slot → first free grid cell
+  | { type: 'moveItem'; index: number; x: number; y: number }; // grid reposition
 
 export interface GroundDrop { id: number; defId: string; qty: number; pos: Vec2; age: number }
 

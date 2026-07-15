@@ -7,11 +7,15 @@ export const TILE_H = 32;
 export const PLAYER_SPEED = 4.5;      // tiles per second, free continuous movement
 export const PLAYER_RADIUS = 0.3;     // collision radius vs blocked tiles
 export const CAMERA_LERP = 0.15;
+export const MOVE_PER_POINT = 0.02;   // movementSpeed above class base scales PLAYER_SPEED 2%/point (clamped 0.6–1.8×)
 
 // combat / typing
 export const RADIUS_BASE = 1.5;       // damage radius at streak 0 (tiles)
 export const RADIUS_PER_STREAK = 0.05;
 export const RADIUS_MAX = 5.0;
+export const PHYS_DAMAGE_SCALE = 0.25; // per-correct-char dmg = round(physicalDamage * this); warrior base 8 → 2/char
+export const WEAPON_ILVL_DMG = 0.5;    // equipped weapon adds itemLevel*this to physicalDamage (ilvl5 → +2.5)
+export const DEFENSE_K = 100;          // melee mitigation: dmg * K/(K+defense); base def 5 → ~4.8% off
 export const TYPO_DAMAGE: Record<number, number> = { 1: 3, 2: 6, 3: 10, 4: 15 };
 export const BOSS_ENRAGE_HP = 0.5;    // fraction of max HP
 export const BOSS_ENRAGE_TYPO_MULT = 1.5;
@@ -54,6 +58,7 @@ export const LEECH_TYPO_PENALTY = 0.5;   // meter drop on a typo (C1)
 export const LEECH_REGEN_DELAY = 10;     // seconds after last damage before out-of-combat refill (C1)
 export const LEECH_REGEN_PER_S = 0.1;    // refill rate per second once regen starts (C1)
 export const BOW_BASE_CHARS_PER_ARROW = 5; // correct letters per arrow, reduced by attackSpeed (A2/C2)
+export const ATK_PER_POINT = 0.1;        // attackSpeed above class base cuts chars/arrow: +10 → −1 char (clamped 2–5)
 
 // save
 export const AUTOSAVE_SECONDS = 10;

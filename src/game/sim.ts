@@ -1,14 +1,14 @@
 // The fixed-timestep orchestrator. Pure: consumes an event queue, mutates
 // state, emits fx. A future server runs this exact function authoritatively.
-import { emptyStats } from './attributes';
+import { emptyStats, maxHp, maxMp, moveSpeed } from './attributes';
 import type { StatId } from './attributes';
-import { classOf, maxHp, maxMp } from './classes';
-import { DROP_DESPAWN_SECONDS, GOLD_PER_COIN, PICKUP_RADIUS, PLAYER_RADIUS, PLAYER_SPEED } from './constants';
+import { classOf } from './classes';
+import { DROP_DESPAWN_SECONDS, GOLD_PER_COIN, PICKUP_RADIUS, PLAYER_RADIUS } from './constants';
 import { resolveKeystroke, syncCombat, tryUltimate } from './combat';
-import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize } from './items';
+import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize, rectFree } from './items';
 import { circleBlocked, isBlocked, SPAWN } from './map';
 import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
-import type { ClassId, GameState, InputEvent, ItemStack, SaveData } from './types';
+import type { ClassId, EquipSlot, GameState, InputEvent, ItemStack, SaveData } from './types';
 import { DIR_VECS, dist, playerWorldPos } from './types';
 
 export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior'): GameState {
@@ -38,6 +38,9 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
     else if (e.type === 'ult') tryUltimate(state);
     else if (e.type === 'respawn') respawnPlayer(state);
     else if (e.type === 'allocateStat') allocateStat(state, e.stat);
+    else if (e.type === 'equip') equipItem(state, e.index);
+    else if (e.type === 'unequip') unequipItem(state, e.slot);
+    else if (e.type === 'moveItem') moveItem(state, e.index, e.x, e.y);
   }
   const p = state.player;
   if (p.ultCooldown > 0) p.ultCooldown = Math.max(0, p.ultCooldown - dt);
@@ -62,7 +65,7 @@ function stepPlayer(state: GameState, dt: number): void {
   if (len < 1e-6) return;
   vx /= len; vy /= len;
   p.dir = state.held[state.held.length - 1];
-  const step = PLAYER_SPEED * dt;
+  const step = moveSpeed(p) * dt;
   const nx = p.pos.x + vx * step, ny = p.pos.y + vy * step;
   if (!circleBlocked(nx, p.pos.y, PLAYER_RADIUS)) p.pos.x = nx; // axis-separated slide
   if (!circleBlocked(p.pos.x, ny, PLAYER_RADIUS)) p.pos.y = ny;
@@ -75,13 +78,30 @@ function stepDrops(state: GameState, dt: number): void {
   const pp = playerWorldPos(p);
   for (let i = state.drops.length - 1; i >= 0; i--) {
     const d = state.drops[i];
+    const prevAge = d.age;
     d.age += dt;
     if (d.age > DROP_DESPAWN_SECONDS) { state.drops.splice(i, 1); continue; }
-    if (!p.dead && dist(d.pos, pp) <= PICKUP_RADIUS) {
-      addToInventory(p, d.defId, d.qty);
+    if (p.dead || dist(d.pos, pp) > PICKUP_RADIUS) continue;
+
+    if (d.defId === 'copper_coin') { // coins convert to gold, never enter the bag
+      p.gold += d.qty * GOLD_PER_COIN;
+      state.fx.push({ kind: 'pickup', text: `+${d.qty * GOLD_PER_COIN} gold` });
+      state.drops.splice(i, 1);
+      state.dirty = true;
+      continue;
+    }
+
+    const taken = addToInventory(p, d.defId, d.qty);
+    if (taken >= d.qty) { // fully picked up
       state.fx.push({ kind: 'pickup', text: `+${d.qty} ${ITEMS[d.defId].name}` });
       state.drops.splice(i, 1);
       state.dirty = true;
+    } else if (taken > 0) { // partial — leave the remainder on the ground
+      d.qty -= taken;
+      state.fx.push({ kind: 'pickup', text: `+${taken} ${ITEMS[d.defId].name}` });
+      state.dirty = true;
+    } else if (Math.floor(prevAge) !== Math.floor(d.age)) { // bag full — toast ~1/sec, no spam
+      state.fx.push({ kind: 'pickup', text: 'Bag full' });
     }
   }
 }
@@ -99,6 +119,64 @@ function allocateStat(state: GameState, stat: StatId): void {
   if (p.statPoints <= 0) return;
   p.stats[stat]++;
   p.statPoints--;
+  state.dirty = true;
+}
+
+/** A max-HP/MP change (equip/unequip) keeps current values, clamped down to the new cap. */
+function clampVitals(p: GameState['player']): void {
+  p.hp = Math.min(p.hp, maxHp(p));
+  p.mp = Math.min(p.mp, maxMp(p));
+}
+
+/** Equip inventory[index] into its slot. Silent no-op (v4-2) if the item isn't equippable
+ *  or the character is under the required level; the UI pre-checks and shows feedback. */
+function equipItem(state: GameState, index: number): void {
+  const p = state.player;
+  const st = p.inventory[index];
+  if (!st) return;
+  const def = ITEMS[st.defId];
+  if (!def?.slot) return;                       // not equippable
+  if (p.level < (def.reqLevel ?? 0)) return;    // under-level — reject silently
+  const slot = def.slot;
+  const prev = p.equipment[slot];
+  p.inventory.splice(index, 1);                 // free the item's cells first
+  if (prev) {                                   // swap: place the old item back in the bag
+    const ps = itemSize(ITEMS[prev.defId]);
+    const cell = firstFreeCell(p.inventory, ps.w, ps.h);
+    if (!cell) { p.inventory.splice(index, 0, st); return; } // no room for the swap — revert
+    p.inventory.push({ ...prev, x: cell.x, y: cell.y });
+  }
+  p.equipment[slot] = { defId: st.defId, qty: st.qty, ...(st.plus !== undefined && { plus: st.plus }) };
+  clampVitals(p);
+  p.invRev++;
+  state.dirty = true;
+}
+
+/** Move the item in `slot` to the first free grid cell. Silent no-op if the bag has no room. */
+function unequipItem(state: GameState, slot: EquipSlot): void {
+  const p = state.player;
+  const st = p.equipment[slot];
+  if (!st) return;
+  const us = itemSize(ITEMS[st.defId]);
+  const cell = firstFreeCell(p.inventory, us.w, us.h);
+  if (!cell) return;                            // no room — reject silently
+  p.inventory.push({ ...st, x: cell.x, y: cell.y });
+  p.equipment[slot] = null;
+  clampVitals(p);
+  p.invRev++;
+  state.dirty = true;
+}
+
+/** Reposition inventory[index] to (x,y) if its footprint fits clear of the other items. */
+function moveItem(state: GameState, index: number, x: number, y: number): void {
+  const p = state.player;
+  const st = p.inventory[index];
+  if (!st) return;
+  const { w, h } = itemSize(ITEMS[st.defId]);
+  const others = p.inventory.filter((_, i) => i !== index);
+  if (!rectFree(others, x, y, w, h)) return;    // out of bounds or collision — reject silently
+  st.x = x; st.y = y;
+  p.invRev++;
   state.dirty = true;
 }
 
@@ -134,8 +212,6 @@ export function applySave(state: GameState, save: SaveData): void {
   p.classId = save.player.classId;
   p.level = Math.max(1, save.player.level);
   p.xp = Math.max(0, save.player.xp);
-  p.hp = Math.min(Math.max(1, save.player.hp), maxHp(p));
-  p.mp = Math.min(Math.max(0, save.player.mp), maxMp(p));
   const pos = save.player.pos;
   p.pos = isBlocked(Math.round(pos.x), Math.round(pos.y)) ? { ...SPAWN } : { ...pos };
   p.stats = save.player.stats ? { ...save.player.stats } : emptyStats();
@@ -166,6 +242,9 @@ export function applySave(state: GameState, save: SaveData): void {
     p.gold = gold;
     p.equipment = emptyEquipment();
   }
+  // Clamp vitals AFTER stats + equipment are applied, so the gear-aware maxHp/maxMp are correct.
+  p.hp = Math.min(Math.max(1, save.player.hp), maxHp(p));
+  p.mp = Math.min(Math.max(0, save.player.mp), maxMp(p));
   p.invRev++;
   state.bossKilled = save.bossKilled;
 }

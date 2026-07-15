@@ -31,5 +31,4 @@ export const CLASSES: Record<ClassId, ClassDef> = {
 };
 
 export const classOf = (p: Player): ClassDef => CLASSES[p.classId];
-export const maxHp = (p: Player): number => classOf(p).baseHp + classOf(p).hpPerLevel * (p.level - 1);
-export const maxMp = (p: Player): number => classOf(p).baseMp + classOf(p).mpPerLevel * (p.level - 1);
+// maxHp/maxMp now live in attributes.ts (they read gear-aware effectiveAttributes).

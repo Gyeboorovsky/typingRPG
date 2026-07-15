@@ -1,9 +1,9 @@
 // DOM HUD overlay: bars, typing prompt, boss bar, toasts, inventory, the
 // draggable statistics/attributes window, death screen. Reads state each
 // frame but only touches the DOM when values change.
-import { effectiveAttributes, STAT_IDS } from '../game/attributes';
+import { effectiveAttributes, maxHp, maxMp, STAT_IDS } from '../game/attributes';
 import type { AttributeId, StatId } from '../game/attributes';
-import { classOf, maxHp, maxMp } from '../game/classes';
+import { classOf } from '../game/classes';
 import { aggroed, radiusFor } from '../game/combat';
 import { XP_CURVE } from '../game/constants';
 import { ITEMS } from '../game/items';
@@ -13,7 +13,7 @@ import type { Fx, GameState } from '../game/types';
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 
 const INV_SLOTS = 30;
-const ATTR_IDS: AttributeId[] = ['health', 'energy', 'defense', 'physicalDamage', 'magicDamage', 'movementSpeed', 'dodge'];
+const ATTR_IDS: AttributeId[] = ['health', 'energy', 'defense', 'physicalDamage', 'magicDamage', 'movementSpeed', 'dodge', 'attackSpeed'];
 
 export class Hud {
   private els = {
@@ -89,11 +89,12 @@ export class Hud {
     const e = this.els;
     const mhp = maxHp(p), mmp = maxMp(p), need = XP_CURVE(p.level);
 
-    this.set('hp', Math.ceil(p.hp), () => {
+    // key includes the max so a maxHp/maxMp change (VIT/INT or gear) refreshes the bar
+    this.set('hp', `${Math.ceil(p.hp)}/${mhp}`, () => {
       e.hpFill.style.width = `${(p.hp / mhp) * 100}%`;
       e.hpText.textContent = `${Math.ceil(p.hp)} / ${mhp}`;
     });
-    this.set('mp', Math.floor(p.mp), () => {
+    this.set('mp', `${Math.floor(p.mp)}/${mmp}`, () => {
       e.mpFill.style.width = `${(p.mp / mmp) * 100}%`;
       e.mpText.textContent = `${Math.floor(p.mp)} / ${mmp}`;
     });
@@ -202,7 +203,7 @@ export class Hud {
     }
     for (const btn of this.els.statPlusBtns) btn.disabled = p.statPoints <= 0;
 
-    const attrs = effectiveAttributes(p.classId, p.stats);
+    const attrs = effectiveAttributes(p.classId, p.stats, p.equipment);
     for (const attr of ATTR_IDS) {
       const v = attrs[attr];
       this.els.attrVals[attr].textContent = attr === 'dodge' ? `${v.toFixed(1)}%` : String(Math.round(v));

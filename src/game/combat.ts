@@ -1,17 +1,33 @@
 // The heart of the game: per-keystroke resolution, streak → AoE radius,
 // ultimates, boss shield/enrage, XP and kills.
-import { statPointsEarned, STAT_IDS } from './attributes';
-import { classOf, maxHp, maxMp } from './classes';
 import {
-  BOSS_ENRAGE_HP, BOSS_ENRAGE_TYPO_MULT, BOSS_SHIELD_AT, PROMPT_MP_REWARD,
+  effectiveAttributes, maxHp, maxMp, physCharDamage, statPointsEarned, STAT_IDS,
+} from './attributes';
+import { classOf } from './classes';
+import {
+  BOSS_ENRAGE_HP, BOSS_ENRAGE_TYPO_MULT, BOSS_SHIELD_AT, DEFENSE_K, PROMPT_MP_REWARD,
   RADIUS_BASE, RADIUS_MAX, RADIUS_PER_STREAK, ULT_DAMAGE, ULT_RADIUS_MULT, XP_CURVE,
 } from './constants';
-import { weaponBonus } from './items';
 import { rollDrops } from './loot';
 import { MOBS, respawnDelayFor } from './mobs';
+import { rand } from './rng';
 import { promptFor } from './words';
-import type { GameState, Mob, Tier } from './types';
+import type { GameState, Mob, Player, Tier } from './types';
 import { dist, playerWorldPos } from './types';
+
+/** Per-correct-char typing damage for a player, from their effective (gear-aware) attributes. */
+export const typingDamage = (p: Player): number =>
+  physCharDamage(effectiveAttributes(p.classId, p.stats, p.equipment));
+
+/** Apply defense mitigation and roll dodge against an incoming melee hit (the mob's typo
+ *  retaliation today; real mob-melee reuses this later). Consumes state.rng for dodge, so
+ *  results are seed-deterministic. Returns 0 when the hit is dodged. */
+export function meleeMitigatedDamage(state: GameState, raw: number): number {
+  if (raw <= 0) return 0;
+  const attrs = effectiveAttributes(state.player.classId, state.player.stats, state.player.equipment);
+  if (rand(state) * 100 < attrs.dodge) return 0; // dodged
+  return Math.round(raw * DEFENSE_K / (DEFENSE_K + attrs.defense));
+}
 
 export const radiusFor = (streak: number): number =>
   Math.min(RADIUS_BASE + RADIUS_PER_STREAK * streak, RADIUS_MAX);
@@ -45,7 +61,7 @@ export function resolveKeystroke(state: GameState, ch: string): void {
   if (ch === c.prompt[c.typed]) {
     c.typed++;
     c.streak++;
-    const dmg = classOf(p).baseDamage + weaponBonus(p);
+    const dmg = typingDamage(p);
     const r = radiusFor(c.streak);
     const pp = playerWorldPos(p);
     for (const m of aggroed(state)) if (dist(m.pos, pp) <= r) damageMob(state, m, dmg);
@@ -71,16 +87,16 @@ function typo(state: GameState): void {
   const c = state.combat!;
   c.streak = 0;
   c.errorFlash = 0.3;
-  let dmg = 0;
+  let raw = 0;
   let shieldedBoss = false;
   for (const m of aggroed(state)) {
     const def = MOBS[m.defId];
     let d = def.typoDamage;
     if (def.boss && m.hp <= def.hp * BOSS_ENRAGE_HP) d = Math.round(d * BOSS_ENRAGE_TYPO_MULT);
-    if (d > dmg) dmg = d; // the hardest engaged mob punishes the typo
+    if (d > raw) raw = d; // the hardest engaged mob punishes the typo
     if (m.shield) shieldedBoss = true;
   }
-  hurtPlayer(state, dmg);
+  hurtPlayer(state, meleeMitigatedDamage(state, raw)); // defense/dodge soften the hit
   if (shieldedBoss && state.combat) newPrompt(state); // flawless phase restarts
 }
 

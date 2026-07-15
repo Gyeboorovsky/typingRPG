@@ -2,7 +2,12 @@
 // and allocatable stat points (VIT/INT/STR/DEX). Pure config + derivation,
 // no simulation state mutation here — sim.ts owns granting/spending points.
 import { CLASSES } from './classes';
-import type { ClassId } from './types';
+import {
+  ATK_PER_POINT, BOW_BASE_CHARS_PER_ARROW, MOVE_PER_POINT,
+  PHYS_DAMAGE_SCALE, PLAYER_SPEED, WEAPON_ILVL_DMG,
+} from './constants';
+import { ITEMS } from './items';
+import type { ClassId, EquipSlot, ItemStack, Player } from './types';
 
 export type AttributeId =
   | 'health' | 'energy' | 'defense' | 'physicalDamage' | 'magicDamage'
@@ -47,8 +52,13 @@ export const CLASS_STAT_MODIFIERS: Record<ClassId, Record<StatId, number>> = {
   priest: { VIT: 90, INT: 130, STR: 70, DEX: 100 },
 };
 
-/** Base attributes plus the effect of all spent stat points, for a class. */
-export function effectiveAttributes(classId: ClassId, stats: Record<StatId, number>): Attributes {
+/** Base attributes, plus spent stat points, plus equipped-gear bonuses (when given).
+ *  Single source of truth for a character's real attributes — combat, maxHp/maxMp and
+ *  the Character panel all read from here so they can never disagree. */
+export function effectiveAttributes(
+  classId: ClassId, stats: Record<StatId, number>,
+  equipment?: Record<EquipSlot, ItemStack | null>,
+): Attributes {
   const result = baseAttributes(classId);
   const mods = CLASS_STAT_MODIFIERS[classId];
   for (const stat of STAT_IDS) {
@@ -59,7 +69,55 @@ export function effectiveAttributes(classId: ClassId, stats: Record<StatId, numb
     for (const key of Object.keys(effect) as AttributeId[])
       result[key] += (effect[key] ?? 0) * pts * mod;
   }
+  if (equipment) {
+    for (const slot of Object.keys(equipment) as EquipSlot[]) {
+      const st = equipment[slot];
+      if (!st) continue;
+      const def = ITEMS[st.defId];
+      if (!def) continue;
+      if (def.bonuses)
+        for (const key of Object.keys(def.bonuses) as AttributeId[])
+          result[key] += def.bonuses[key] ?? 0;
+      // the equipped weapon's power level scales its physical damage
+      if (slot === 'weapon' && def.itemLevel)
+        result.physicalDamage += def.itemLevel * WEAPON_ILVL_DMG;
+    }
+  }
   return result;
+}
+
+/** Per-correct-char typing damage from a character's physical damage (integer, ≥1). */
+export const physCharDamage = (attrs: Attributes): number =>
+  Math.max(1, Math.round(attrs.physicalDamage * PHYS_DAMAGE_SCALE));
+
+// --- per-Player derivations (kept here, not classes.ts, so they can read gear-aware
+// effectiveAttributes without a classes↔attributes import cycle) ---
+
+/** Max HP = the effective `health` attribute (class base + VIT + gear) plus level scaling.
+ *  The class base is already inside `health`, so only hpPerLevel*(level-1) is added on top —
+ *  at 0 stats/gear this equals the old baseHp + hpPerLevel*(level-1). */
+export const maxHp = (p: Player): number =>
+  effectiveAttributes(p.classId, p.stats, p.equipment).health + CLASSES[p.classId].hpPerLevel * (p.level - 1);
+
+export const maxMp = (p: Player): number =>
+  effectiveAttributes(p.classId, p.stats, p.equipment).energy + CLASSES[p.classId].mpPerLevel * (p.level - 1);
+
+/** Effective movement speed (tiles/s): movementSpeed as a % bonus over the class's OWN
+ *  baseline, so every class moves at ≈ PLAYER_SPEED with default gear (v4-3). */
+export function moveSpeed(p: Player): number {
+  const base = baseAttributes(p.classId).movementSpeed;
+  const eff = effectiveAttributes(p.classId, p.stats, p.equipment).movementSpeed;
+  const factor = Math.max(0.6, Math.min(1.8, 1 + (eff - base) * MOVE_PER_POINT));
+  return PLAYER_SPEED * factor;
+}
+
+/** Correct letters required per bow arrow: BOW_BASE_CHARS_PER_ARROW reduced by attackSpeed
+ *  over the class baseline, clamped to [2,5]. Pure helper — bow tempo is wired in C2. */
+export function arrowsPerCharsInterval(p: Player): number {
+  const base = baseAttributes(p.classId).attackSpeed;
+  const eff = effectiveAttributes(p.classId, p.stats, p.equipment).attackSpeed;
+  const chars = Math.round(BOW_BASE_CHARS_PER_ARROW - (eff - base) * ATK_PER_POINT);
+  return Math.max(2, Math.min(5, chars));
 }
 
 // --- stat point progression: 1 point per 25% of the current level's XP bar ---

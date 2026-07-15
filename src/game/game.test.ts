@@ -1,20 +1,24 @@
 // Unit tests for the pure simulation core (no DOM, fully seeded).
 import { describe, expect, it } from 'vitest';
-import { baseAttributes, effectiveAttributes } from './attributes';
-import { classOf, maxHp } from './classes';
 import {
-  damageMob, grantXp, radiusFor, resolveKeystroke, syncCombat,
+  arrowsPerCharsInterval, baseAttributes, effectiveAttributes, emptyStats,
+  maxHp, maxMp, moveSpeed,
+} from './attributes';
+import { CLASSES } from './classes';
+import {
+  damageMob, grantXp, meleeMitigatedDamage, radiusFor, resolveKeystroke, syncCombat, typingDamage,
 } from './combat';
 import {
-  BOSS_ENRAGE_TYPO_MULT, GOLD_PER_COIN, INV_H, INV_W,
+  BOSS_ENRAGE_TYPO_MULT, GOLD_PER_COIN, INV_H, INV_W, MOVE_PER_POINT,
   PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX, SIM_DT, XP_CURVE,
 } from './constants';
 import { addToInventory, firstFreeCell } from './items';
 import { rollDrops } from './loot';
 import { isBlocked } from './map';
 import { MOBS } from './mobs';
+import { rand } from './rng';
 import { applySave, makeSave, newGame, update } from './sim';
-import type { GameState, Mob, SaveData, Vec2 } from './types';
+import type { ClassId, GameState, Mob, SaveData, Vec2 } from './types';
 
 /** A controlled state: player at spawn, exactly these mobs, combat synced. */
 function stateWith(mobs: { defId: string; pos: Vec2; hp?: number; shield?: boolean; shieldsUsed?: number }[]): GameState {
@@ -45,22 +49,26 @@ describe('resolveKeystroke', () => {
       { defId: 'slime', pos: NEAR },
       { defId: 'slime', pos: { x: 24, y: 30 } }, // 9 tiles away
     ]);
+    const dmg = typingDamage(s.player); // physicalDamage-based, gear-aware
     resolveKeystroke(s, s.combat!.prompt[0]);
-    expect(s.mobs[0].hp).toBe(MOBS.slime.hp - classOf(s.player).baseDamage);
+    expect(s.mobs[0].hp).toBe(MOBS.slime.hp - dmg);
     expect(s.mobs[1].hp).toBe(MOBS.slime.hp);
     expect(s.combat!.streak).toBe(1);
     expect(s.combat!.typed).toBe(1);
   });
 
-  it('a typo resets the streak and hurts by the hardest engaged tier', () => {
+  it('a typo resets the streak and hurts by the hardest engaged tier (defense-mitigated)', () => {
     const s = stateWith([
       { defId: 'slime', pos: NEAR },
       { defId: 'cultist', pos: { x: 23, y: 38 } },
     ]);
     s.combat!.streak = 12;
+    const a = effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment);
+    const dodged = rand({ rng: s.rng }) * 100 < a.dodge; // probe the same roll, without consuming s.rng
+    const expected = dodged ? 0 : Math.round(MOBS.cultist.typoDamage * 100 / (100 + a.defense));
     const hp = s.player.hp;
     resolveKeystroke(s, MISS);
-    expect(hp - s.player.hp).toBe(MOBS.cultist.typoDamage);
+    expect(hp - s.player.hp).toBe(expected);
     expect(s.combat!.streak).toBe(0);
   });
 
@@ -100,11 +108,15 @@ describe('boss (Typhon)', () => {
     expect(s.mobs[0].shield).toBe(false);
   });
 
-  it('punishes typos 1.5x harder when enraged (≤50% HP)', () => {
+  it('punishes typos 1.5x harder when enraged (≤50% HP), then applies defense', () => {
     const s = stateWith([{ defId: 'typhon', pos: NEAR, hp: 150 }]);
+    const a = effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment);
+    const raw = Math.round(MOBS.typhon.typoDamage * BOSS_ENRAGE_TYPO_MULT);
+    const dodged = rand({ rng: s.rng }) * 100 < a.dodge;
+    const expected = dodged ? 0 : Math.round(raw * 100 / (100 + a.defense));
     const hp = s.player.hp;
     resolveKeystroke(s, MISS);
-    expect(hp - s.player.hp).toBe(Math.round(MOBS.typhon.typoDamage * BOSS_ENRAGE_TYPO_MULT));
+    expect(hp - s.player.hp).toBe(expected);
   });
 });
 
@@ -236,15 +248,15 @@ describe('inventory grid', () => {
     expect(firstFreeCell(placed, 1, 1)).toBeNull();
   });
 
-  it('addToInventory places gear in the grid and overflows past capacity', () => {
+  it('addToInventory fills the grid then leaves the rest un-taken (no overflow)', () => {
     const s = newGame(1);
     // iron_sword is 1x2 (2 cells); the 10x6 grid holds exactly 30 of them.
-    for (let i = 0; i < 30; i++) addToInventory(s.player, 'iron_sword', 1);
+    for (let i = 0; i < 30; i++) expect(addToInventory(s.player, 'iron_sword', 1)).toBe(1);
     expect(s.player.inventory).toHaveLength(30);
     expect(s.player.overflow).toHaveLength(0);
-    addToInventory(s.player, 'iron_sword', 1); // 31st — no room
+    expect(addToInventory(s.player, 'iron_sword', 1)).toBe(0); // 31st — no room, taken = 0
     expect(s.player.inventory).toHaveLength(30);
-    expect(s.player.overflow).toEqual([{ defId: 'iron_sword', qty: 1 }]);
+    expect(s.player.overflow).toHaveLength(0); // overflow is no longer written by pickups
   });
 
   it('addToInventory stacks stackables into a single 1x1 cell', () => {
@@ -278,5 +290,185 @@ describe('attributes: attackSpeed', () => {
     expect(gain('ninja')).toBeCloseTo(dex * 1.30);
     expect(gain('warrior')).toBeCloseTo(dex * 0.90);
     expect(gain('ninja')).toBeGreaterThan(gain('warrior'));
+  });
+});
+
+describe('maxHp/maxMp unification (v3-1)', () => {
+  const ALL: ClassId[] = ['warrior', 'ninja', 'wizard', 'priest'];
+
+  it('at 0 stats + no gear equals class base + level scaling (parity with the old formula)', () => {
+    for (const c of ALL) {
+      const s = newGame(1, 'H', c);
+      for (const L of [1, 5, 10]) {
+        s.player.level = L;
+        s.player.stats = emptyStats();
+        expect(maxHp(s.player)).toBe(CLASSES[c].baseHp + CLASSES[c].hpPerLevel * (L - 1));
+        expect(maxMp(s.player)).toBe(CLASSES[c].baseMp + CLASSES[c].mpPerLevel * (L - 1));
+      }
+    }
+  });
+
+  it('VIT now raises max HP (the previously-broken disconnect)', () => {
+    const s = newGame(1);
+    const before = maxHp(s.player);
+    s.player.stats = { ...emptyStats(), VIT: 10 };
+    expect(maxHp(s.player)).toBeGreaterThan(before);
+  });
+
+  it('an equipped weapon folds its gear stats into physicalDamage (gear-aware combat)', () => {
+    const s = newGame(1);
+    const bare = typingDamage(s.player);
+    s.player.equipment.weapon = { defId: 'claymore', qty: 1 };
+    expect(typingDamage(s.player)).toBeGreaterThan(bare);
+  });
+});
+
+describe('equipment events', () => {
+  const bare = (s: GameState): void => { s.mobs = []; s.drops = []; };
+
+  it('equip moves an inventory item into its slot and frees its cells', () => {
+    const s = newGame(1); bare(s);
+    s.player.level = 5;
+    s.player.inventory = [{ defId: 'iron_sword', qty: 1, x: 0, y: 0 }];
+    update(s, [{ type: 'equip', index: 0 }], SIM_DT);
+    expect(s.player.equipment.weapon).toEqual({ defId: 'iron_sword', qty: 1 });
+    expect(s.player.inventory).toHaveLength(0);
+  });
+
+  it('equip is a silent no-op under the required level', () => {
+    const s = newGame(1); bare(s);
+    s.player.level = 2; // iron_sword reqLevel 3
+    s.player.inventory = [{ defId: 'iron_sword', qty: 1, x: 0, y: 0 }];
+    update(s, [{ type: 'equip', index: 0 }], SIM_DT);
+    expect(s.player.equipment.weapon).toBeNull();
+    expect(s.player.inventory).toHaveLength(1);
+  });
+
+  it('equipping into an occupied slot swaps the old item back into the bag', () => {
+    const s = newGame(1); bare(s);
+    s.player.level = 5;
+    s.player.equipment.weapon = { defId: 'iron_sword', qty: 1 };
+    s.player.inventory = [{ defId: 'claymore', qty: 1, x: 0, y: 0 }];
+    update(s, [{ type: 'equip', index: 0 }], SIM_DT);
+    expect(s.player.equipment.weapon!.defId).toBe('claymore');
+    expect(s.player.inventory).toHaveLength(1);
+    expect(s.player.inventory[0].defId).toBe('iron_sword');
+  });
+
+  it('unequip drops the item into the first free cell', () => {
+    const s = newGame(1); bare(s);
+    s.player.equipment.weapon = { defId: 'iron_sword', qty: 1 };
+    s.player.inventory = [];
+    update(s, [{ type: 'unequip', slot: 'weapon' }], SIM_DT);
+    expect(s.player.equipment.weapon).toBeNull();
+    expect(s.player.inventory).toEqual([{ defId: 'iron_sword', qty: 1, x: 0, y: 0 }]);
+  });
+
+  it('unequip is a silent no-op when the bag has no room', () => {
+    const s = newGame(1); bare(s);
+    s.player.inventory = [];
+    for (let y = 0; y < INV_H; y++) for (let x = 0; x < INV_W; x++)
+      s.player.inventory.push({ defId: 'slime_gel', qty: 1, x, y });
+    s.player.equipment.weapon = { defId: 'iron_sword', qty: 1 };
+    update(s, [{ type: 'unequip', slot: 'weapon' }], SIM_DT);
+    expect(s.player.equipment.weapon).toEqual({ defId: 'iron_sword', qty: 1 });
+    expect(s.player.inventory).toHaveLength(INV_W * INV_H);
+  });
+
+  it('moveItem repositions when the footprint is clear', () => {
+    const s = newGame(1); bare(s);
+    s.player.inventory = [{ defId: 'slime_gel', qty: 1, x: 0, y: 0 }];
+    update(s, [{ type: 'moveItem', index: 0, x: 5, y: 3 }], SIM_DT);
+    expect(s.player.inventory[0]).toMatchObject({ x: 5, y: 3 });
+  });
+
+  it('moveItem rejects a colliding target (multi-cell footprint honored)', () => {
+    const s = newGame(1); bare(s);
+    s.player.inventory = [
+      { defId: 'iron_sword', qty: 1, x: 0, y: 0 }, // 1x2 spans (0,0) and (0,1)
+      { defId: 'slime_gel', qty: 1, x: 2, y: 0 },
+    ];
+    update(s, [{ type: 'moveItem', index: 1, x: 0, y: 1 }], SIM_DT); // lands on the sword's 2nd cell
+    expect(s.player.inventory[1]).toMatchObject({ x: 2, y: 0 }); // unchanged
+  });
+
+  it('moveItem rejects an out-of-bounds target', () => {
+    const s = newGame(1); bare(s);
+    s.player.inventory = [{ defId: 'iron_sword', qty: 1, x: 0, y: 0 }]; // 1x2
+    update(s, [{ type: 'moveItem', index: 0, x: 0, y: INV_H - 1 }], SIM_DT); // y+2 > INV_H
+    expect(s.player.inventory[0]).toMatchObject({ x: 0, y: 0 });
+  });
+});
+
+describe('currency & bag-full pickups', () => {
+  it('copper_coin converts to gold on pickup and never enters the bag', () => {
+    const s = newGame(1); s.mobs = [];
+    const g0 = s.player.gold;
+    s.drops = [{ id: 1, defId: 'copper_coin', qty: 3, pos: { ...s.player.pos }, age: 0 }];
+    update(s, [], SIM_DT);
+    expect(s.player.gold).toBe(g0 + 3 * GOLD_PER_COIN);
+    expect(s.player.inventory.some((i) => i.defId === 'copper_coin')).toBe(false);
+    expect(s.drops).toHaveLength(0);
+  });
+
+  it('a full bag leaves the drop on the ground and toasts "Bag full"', () => {
+    const s = newGame(1); s.mobs = [];
+    s.player.inventory = [];
+    for (let y = 0; y < INV_H; y++) for (let x = 0; x < INV_W; x++)
+      s.player.inventory.push({ defId: 'slime_gel', qty: 1, x, y });
+    s.drops = [{ id: 1, defId: 'iron_sword', qty: 1, pos: { ...s.player.pos }, age: 0.99 }];
+    update(s, [], SIM_DT); // age crosses 1.0s → the ~1/sec toast fires
+    expect(s.drops).toHaveLength(1);
+    expect(s.player.inventory).toHaveLength(INV_W * INV_H);
+    expect(s.fx.some((f) => f.kind === 'pickup' && f.text === 'Bag full')).toBe(true);
+  });
+});
+
+describe('defense & dodge (seeded melee mitigation)', () => {
+  it('applies defense mitigation when the seeded roll does not dodge', () => {
+    const s = newGame(1); // warrior base defense 5, dodge 3
+    s.rng = 999;
+    const a = effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment);
+    const roll = rand({ rng: s.rng }) * 100; // probe the same roll without consuming s.rng
+    const expected = roll < a.dodge ? 0 : Math.round(50 * 100 / (100 + a.defense));
+    expect(meleeMitigatedDamage(s, 50)).toBe(expected);
+  });
+
+  it('dodge negates the hit entirely when dodge exceeds any roll', () => {
+    const s = newGame(1);
+    s.rng = 999;
+    s.player.stats = { ...emptyStats(), DEX: 300 }; // dodge >> 100, so every [0,100) roll dodges
+    expect(effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment).dodge).toBeGreaterThan(100);
+    expect(meleeMitigatedDamage(s, 50)).toBe(0);
+  });
+});
+
+describe('movementSpeed derivation', () => {
+  it('is PLAYER_SPEED at the class baseline (0 stats/gear)', () => {
+    const s = newGame(1);
+    expect(moveSpeed(s.player)).toBeCloseTo(PLAYER_SPEED);
+  });
+
+  it('scales up with DEX over the class base and clamps at 1.8x', () => {
+    const s = newGame(1); // warrior DEX→movementSpeed 1 * 0.9 mod = +0.9/pt
+    s.player.stats = { ...emptyStats(), DEX: 20 }; // +18 movementSpeed over base
+    expect(moveSpeed(s.player)).toBeCloseTo(PLAYER_SPEED * (1 + 18 * MOVE_PER_POINT));
+    s.player.stats = { ...emptyStats(), DEX: 10000 };
+    expect(moveSpeed(s.player)).toBeCloseTo(PLAYER_SPEED * 1.8);
+  });
+});
+
+describe('arrowsPerCharsInterval derivation (bow tempo helper)', () => {
+  it('is the base chars/arrow at the class baseline', () => {
+    const s = newGame(1);
+    expect(arrowsPerCharsInterval(s.player)).toBe(5);
+  });
+
+  it('drops with attackSpeed and clamps to [2,5]', () => {
+    const s = newGame(1); // warrior DEX→attackSpeed 0.9/pt
+    s.player.stats = { ...emptyStats(), DEX: 20 }; // +18 attackSpeed → round(5 - 1.8) = 3
+    expect(arrowsPerCharsInterval(s.player)).toBe(3);
+    s.player.stats = { ...emptyStats(), DEX: 10000 };
+    expect(arrowsPerCharsInterval(s.player)).toBe(2);
   });
 });
