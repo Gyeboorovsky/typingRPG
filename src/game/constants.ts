@@ -41,6 +41,20 @@ export const MOB_RADIUS = 0.35;       // collision radius vs blocked tiles
 export const DROP_DESPAWN_SECONDS = 60;
 export const PICKUP_RADIUS = 0.75;
 
+// inventory / currency
+export const INV_W = 10;                 // grid columns
+export const INV_H = 6;                  // grid rows — 60 cells > old flat ≤30, so v1 bags always fit
+export const GOLD_PER_COIN = 1;          // copper_coin → gold conversion rate (provisional)
+
+// combat rebuild — provisional stubs, tuned in A2/C1/C2 (life-leech & attack speed)
+export const LEECH_CAP = 0.10;           // max fraction of dealt damage returned as HP (C1)
+export const LEECH_GAIN_PER_CHAR = 0.01; // meter rise per correct keystroke (C1)
+export const LEECH_DRAIN_PER_HP = 0.01;  // meter drop per HP lost when hit (C1)
+export const LEECH_TYPO_PENALTY = 0.5;   // meter drop on a typo (C1)
+export const LEECH_REGEN_DELAY = 10;     // seconds after last damage before out-of-combat refill (C1)
+export const LEECH_REGEN_PER_S = 0.1;    // refill rate per second once regen starts (C1)
+export const BOW_BASE_CHARS_PER_ARROW = 5; // correct letters per arrow, reduced by attackSpeed (A2/C2)
+
 // save
 export const AUTOSAVE_SECONDS = 10;
 export const MAX_CHARACTERS = 4;

@@ -3,12 +3,12 @@
 import { emptyStats } from './attributes';
 import type { StatId } from './attributes';
 import { classOf, maxHp, maxMp } from './classes';
-import { DROP_DESPAWN_SECONDS, PICKUP_RADIUS, PLAYER_RADIUS, PLAYER_SPEED } from './constants';
+import { DROP_DESPAWN_SECONDS, GOLD_PER_COIN, PICKUP_RADIUS, PLAYER_RADIUS, PLAYER_SPEED } from './constants';
 import { resolveKeystroke, syncCombat, tryUltimate } from './combat';
-import { addToInventory, ITEMS } from './items';
+import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize } from './items';
 import { circleBlocked, isBlocked, SPAWN } from './map';
 import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
-import type { ClassId, GameState, InputEvent, SaveData } from './types';
+import type { ClassId, GameState, InputEvent, ItemStack, SaveData } from './types';
 import { DIR_VECS, dist, playerWorldPos } from './types';
 
 export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior'): GameState {
@@ -17,7 +17,8 @@ export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior
     player: {
       name, classId, pos: { ...SPAWN }, dir: 0,
       hp: 0, mp: 0, level: 1, xp: 0, stats: emptyStats(), statPoints: 0,
-      inventory: [], invRev: 0,
+      equipment: emptyEquipment(), gold: 0, leech: 1,
+      inventory: [], overflow: [], invRev: 0,
       dead: false, ultCooldown: 0, animT: 0,
     },
     mobs: [], drops: [], spots: SPOTS.map(() => ({ pending: [] })),
@@ -114,11 +115,14 @@ function respawnPlayer(state: GameState): void {
 export function makeSave(state: GameState): SaveData {
   const p = state.player;
   return {
-    v: 1, savedAt: '',
+    v: 2, savedAt: '',
     player: {
       name: p.name, classId: p.classId, level: p.level, xp: p.xp, hp: p.hp, mp: p.mp,
       pos: { ...p.pos }, inventory: p.inventory.map((s) => ({ ...s })),
+      equipment: cloneEquipment(p.equipment), gold: p.gold,
+      overflow: p.overflow.map((s) => ({ ...s })),
       stats: { ...p.stats }, statPoints: p.statPoints,
+      // leech is transient — deliberately not serialized (re-init full on load).
     },
     bossKilled: state.bossKilled,
   };
@@ -134,9 +138,34 @@ export function applySave(state: GameState, save: SaveData): void {
   p.mp = Math.min(Math.max(0, save.player.mp), maxMp(p));
   const pos = save.player.pos;
   p.pos = isBlocked(Math.round(pos.x), Math.round(pos.y)) ? { ...SPAWN } : { ...pos };
-  p.inventory = save.player.inventory.map((s) => ({ ...s }));
   p.stats = save.player.stats ? { ...save.player.stats } : emptyStats();
   p.statPoints = save.player.statPoints ?? 0;
+  p.leech = 1; // transient — always re-init full on load (never persisted)
+
+  if (save.v === 2) {
+    p.inventory = save.player.inventory.map((s) => ({ ...s, x: s.x ?? 0, y: s.y ?? 0 }));
+    p.overflow = (save.player.overflow ?? []).map((s) => ({ ...s }));
+    p.gold = save.player.gold ?? 0;
+    p.equipment = save.player.equipment ? cloneEquipment(save.player.equipment) : emptyEquipment();
+  } else {
+    // v1 → v2: auto-place the old flat bag row-major, convert held copper_coin → gold
+    // (so returning players don't keep dead currency), no equipment yet; anything
+    // that still doesn't fit spills to overflow (shouldn't happen at 60 cells vs old ≤30).
+    const placed: (ItemStack & { x: number; y: number })[] = [];
+    const overflow: ItemStack[] = [];
+    let gold = 0;
+    for (const stack of save.player.inventory) {
+      if (stack.defId === 'copper_coin') { gold += stack.qty * GOLD_PER_COIN; continue; }
+      const { w, h } = itemSize(ITEMS[stack.defId]);
+      const cell = firstFreeCell(placed, w, h);
+      if (cell) placed.push({ ...stack, x: cell.x, y: cell.y });
+      else overflow.push({ ...stack });
+    }
+    p.inventory = placed;
+    p.overflow = overflow;
+    p.gold = gold;
+    p.equipment = emptyEquipment();
+  }
   p.invRev++;
   state.bossKilled = save.bossKilled;
 }

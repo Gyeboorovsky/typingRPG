@@ -1,5 +1,5 @@
 // All shared shapes of the pure simulation. No DOM, no canvas, no Date.
-import type { StatId } from './attributes';
+import type { AttributeId, StatId } from './attributes';
 
 export type Vec2 = { x: number; y: number };
 export type Dir = 0 | 1 | 2 | 3; // 0 up 1 right 2 down 3 left, always screen-relative
@@ -25,11 +25,27 @@ export interface ClassDef {
 }
 
 export type ItemKind = 'weapon' | 'armor' | 'material' | 'consumable';
+
+// The six paperdoll slots. EQUIP_SLOTS mirrors STAT_IDS: a stable ordered list
+// for building/cloning the equipment record and for the equipment UI (A3).
+export type EquipSlot = 'weapon' | 'armor' | 'helmet' | 'boots' | 'necklace' | 'ring';
+export const EQUIP_SLOTS: readonly EquipSlot[] =
+  ['weapon', 'armor', 'helmet', 'boots', 'necklace', 'ring'];
+export type WeaponType = 'sword' | 'greatsword' | 'daggers' | 'bow' | 'staff' | 'wand' | 'grimoire';
+
 export interface ItemDef {
   id: string; name: string; icon: string; kind: ItemKind; tier: Tier;
   maxStack: number; // 1 for gear
-  weapon?: { dmgPerChar: number };
+  weapon?: { dmgPerChar: number; range?: number }; // range (tiles) drives the bow (behavior later)
   consumable?: { heal?: number; mana?: number };
+  // Equipment metadata (gear only; absent on materials/consumables):
+  slot?: EquipSlot;
+  weaponType?: WeaponType;
+  size?: { w: number; h: number };       // grid footprint; absent = 1x1
+  reqLevel?: number;                      // character level required to equip
+  itemLevel?: number;                     // power level scaling its stats (used later)
+  reqClass?: ClassId[];                   // class-gate seam only; unset = usable by all
+  bonuses?: Partial<Record<AttributeId, number>>; // flat attribute bonuses while equipped
   // Reserved seams for future upgrade (+0..+9) and crafting systems:
   upgradable?: boolean;
   upgradeMats?: { itemId: string; qty: number }[];
@@ -68,7 +84,11 @@ export interface Player {
   level: number; xp: number;
   stats: Record<StatId, number>; // spent VIT/INT/STR/DEX points
   statPoints: number;            // unspent points available to allocate
-  inventory: ItemStack[];
+  equipment: Record<EquipSlot, ItemStack | null>; // worn gear, one stack per slot
+  gold: number;                  // single currency (copper_coin drops convert to it)
+  leech: number;                 // 0..1 life-leech meter; on Player (persists across travel/fight), transient (not saved)
+  inventory: (ItemStack & { x: number; y: number })[]; // positioned grid (INV_W x INV_H); stackables are 1x1
+  overflow: ItemStack[];         // items that didn't fit the grid (migration fallback)
   invRev: number;       // bumped on inventory change (UI rebuild hint)
   dead: boolean;
   ultCooldown: number;  // seconds
@@ -119,14 +139,20 @@ export interface GameState {
 }
 
 export interface SaveData {
-  v: 1;
+  v: 1 | 2;
   savedAt: string;
   player: {
     name: string; classId: ClassId; level: number; xp: number; hp: number; mp: number;
-    pos: Vec2; inventory: ItemStack[];
+    pos: Vec2;
+    // x/y are present in v2 saves, absent in v1 (flat bag); applySave resolves at runtime.
+    inventory: (ItemStack & { x?: number; y?: number })[];
+    equipment?: Record<EquipSlot, ItemStack | null>;
+    gold?: number;
+    overflow?: ItemStack[];
     stats?: Record<StatId, number>; statPoints?: number;
   };
   bossKilled: boolean;
+  // NOT persisted: leech (transient, re-init full on load) and any combat/projectile state.
 }
 
 // Tiny shared math helpers

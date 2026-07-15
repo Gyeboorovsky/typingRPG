@@ -6,7 +6,8 @@ import type { ClassId } from './types';
 
 export type AttributeId =
   | 'health' | 'energy' | 'defense' | 'physicalDamage' | 'magicDamage'
-  | 'movementSpeed' | 'dodge'; // dodge is a percent (0-100)
+  | 'movementSpeed' | 'dodge' // dodge is a percent (0-100)
+  | 'attackSpeed';            // drives bow tempo (fewer chars per arrow); grows with DEX + gear
 
 export type Attributes = Record<AttributeId, number>;
 
@@ -17,10 +18,10 @@ export const STAT_IDS: readonly StatId[] = ['VIT', 'INT', 'STR', 'DEX'];
  *  health/energy come from classes.ts (single source of truth for HP/MP);
  *  the rest are new attributes this module owns. */
 const CLASS_BASE_EXTRA: Record<ClassId, Omit<Attributes, 'health' | 'energy'>> = {
-  warrior: { defense: 5, physicalDamage: 8, magicDamage: 1, movementSpeed: 4, dodge: 3 },
-  ninja: { defense: 3, physicalDamage: 7, magicDamage: 1, movementSpeed: 6, dodge: 8 },
-  wizard: { defense: 4, physicalDamage: 6, magicDamage: 5, movementSpeed: 5, dodge: 4 },
-  priest: { defense: 2, physicalDamage: 3, magicDamage: 9, movementSpeed: 4, dodge: 3 },
+  warrior: { defense: 5, physicalDamage: 8, magicDamage: 1, movementSpeed: 4, dodge: 3, attackSpeed: 5 },
+  ninja: { defense: 3, physicalDamage: 7, magicDamage: 1, movementSpeed: 6, dodge: 8, attackSpeed: 8 },
+  wizard: { defense: 4, physicalDamage: 6, magicDamage: 5, movementSpeed: 5, dodge: 4, attackSpeed: 6 },
+  priest: { defense: 2, physicalDamage: 3, magicDamage: 9, movementSpeed: 4, dodge: 3, attackSpeed: 5 },
 };
 
 export function baseAttributes(classId: ClassId): Attributes {
@@ -33,10 +34,12 @@ export const STAT_EFFECTS: Record<StatId, Partial<Attributes>> = {
   VIT: { health: 10, defense: 1 },
   INT: { energy: 8, magicDamage: 1 },
   STR: { physicalDamage: 2 },
-  DEX: { physicalDamage: 1, movementSpeed: 1, dodge: 1 },
+  DEX: { physicalDamage: 1, movementSpeed: 1, dodge: 1, attackSpeed: 1 },
 };
 
-/** Per-class % modifier applied to STAT_EFFECTS (100 = unchanged, >100 = amplified, <100 = dampened). */
+/** Per-class % modifier applied to STAT_EFFECTS (100 = unchanged, >100 = amplified, <100 = dampened).
+ *  Modifiers are keyed by STAT (not attribute), so the new DEX→attackSpeed effect automatically
+ *  rides each class's existing DEX modifier — no per-attribute row needed here. */
 export const CLASS_STAT_MODIFIERS: Record<ClassId, Record<StatId, number>> = {
   warrior: { VIT: 120, INT: 70, STR: 120, DEX: 90 },
   ninja: { VIT: 90, INT: 80, STR: 100, DEX: 130 },

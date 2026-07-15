@@ -36,7 +36,7 @@ export class SaveManager {
       let best: SaveData | null = null;
       for (const b of slotBackends) {
         const d = await b.load(slot).catch(() => null);
-        if (d?.v === 1 && (!best || d.savedAt > best.savedAt)) best = d;
+        if ((d?.v === 1 || d?.v === 2) && (!best || d.savedAt > best.savedAt)) best = d;
       }
       out.push(best);
     }
@@ -49,7 +49,7 @@ export class SaveManager {
     let best: SaveData | null = null;
     for (const b of this.backends) {
       const d = await b.load(slot).catch(() => null);
-      if (d?.v === 1 && (!best || d.savedAt > best.savedAt)) best = d;
+      if ((d?.v === 1 || d?.v === 2) && (!best || d.savedAt > best.savedAt)) best = d;
     }
     return best;
   }

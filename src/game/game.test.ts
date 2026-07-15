@@ -1,17 +1,20 @@
 // Unit tests for the pure simulation core (no DOM, fully seeded).
 import { describe, expect, it } from 'vitest';
+import { baseAttributes, effectiveAttributes } from './attributes';
 import { classOf, maxHp } from './classes';
 import {
   damageMob, grantXp, radiusFor, resolveKeystroke, syncCombat,
 } from './combat';
 import {
-  BOSS_ENRAGE_TYPO_MULT, PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX, SIM_DT, XP_CURVE,
+  BOSS_ENRAGE_TYPO_MULT, GOLD_PER_COIN, INV_H, INV_W,
+  PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX, SIM_DT, XP_CURVE,
 } from './constants';
+import { addToInventory, firstFreeCell } from './items';
 import { rollDrops } from './loot';
 import { isBlocked } from './map';
 import { MOBS } from './mobs';
 import { applySave, makeSave, newGame, update } from './sim';
-import type { GameState, Mob, Vec2 } from './types';
+import type { GameState, Mob, SaveData, Vec2 } from './types';
 
 /** A controlled state: player at spawn, exactly these mobs, combat synced. */
 function stateWith(mobs: { defId: string; pos: Vec2; hp?: number; shield?: boolean; shieldsUsed?: number }[]): GameState {
@@ -154,24 +157,126 @@ describe('movement and map', () => {
   });
 });
 
-describe('save roundtrip', () => {
-  it('restores progress through JSON serialization', () => {
+describe('save roundtrip (v2)', () => {
+  it('restores positioned inventory, gold and equipment through JSON serialization', () => {
     const a = newGame(5);
     a.player.level = 4;
     a.player.xp = 123;
     a.player.hp = 55;
     a.player.mp = 40;
     a.player.pos = { x: 20, y: 20 };
-    a.player.inventory = [{ defId: 'slime_gel', qty: 7 }, { defId: 'claymore', qty: 1 }];
+    a.player.inventory = [
+      { defId: 'slime_gel', qty: 7, x: 0, y: 0 },
+      { defId: 'claymore', qty: 1, x: 3, y: 0 },
+    ];
+    a.player.gold = 42;
+    a.player.equipment.weapon = { defId: 'iron_sword', qty: 1 };
     a.bossKilled = true;
+    const save = makeSave(a);
+    expect(save.v).toBe(2);
     const b = newGame(9);
-    applySave(b, JSON.parse(JSON.stringify(makeSave(a))));
+    applySave(b, JSON.parse(JSON.stringify(save)));
     expect(b.player.level).toBe(4);
     expect(b.player.xp).toBe(123);
     expect(b.player.hp).toBe(55);
     expect(b.player.mp).toBe(40);
     expect(b.player.pos).toEqual({ x: 20, y: 20 });
-    expect(b.player.inventory).toEqual(a.player.inventory);
+    expect(b.player.inventory).toEqual(a.player.inventory); // v2 loads positions as-is
+    expect(b.player.gold).toBe(42);
+    expect(b.player.equipment.weapon).toEqual({ defId: 'iron_sword', qty: 1 });
+    expect(b.player.overflow).toEqual([]);
+    expect(b.player.leech).toBe(1); // re-init full (never persisted)
     expect(b.bossKilled).toBe(true);
+  });
+
+  it('migrates a v1 save: grid placement, copper_coin→gold, empty equipment', () => {
+    const v1: SaveData = {
+      v: 1, savedAt: '2020-01-01T00:00:00.000Z',
+      player: {
+        name: 'Old', classId: 'warrior', level: 3, xp: 10, hp: 40, mp: 20,
+        pos: { x: 24, y: 39 },
+        inventory: [
+          { defId: 'slime_gel', qty: 7 },
+          { defId: 'copper_coin', qty: 5 },
+          { defId: 'iron_sword', qty: 1 },
+        ],
+      },
+      bossKilled: false,
+    };
+    const s = newGame(1);
+    applySave(s, v1);
+    // copper_coin converts to gold and never enters the bag
+    expect(s.player.inventory.some((it) => it.defId === 'copper_coin')).toBe(false);
+    expect(s.player.gold).toBe(5 * GOLD_PER_COIN);
+    // the rest are auto-placed row-major with coordinates
+    const gel = s.player.inventory.find((it) => it.defId === 'slime_gel')!;
+    const sword = s.player.inventory.find((it) => it.defId === 'iron_sword')!;
+    expect(gel).toMatchObject({ x: 0, y: 0 });        // 1x1 first
+    expect(sword).toMatchObject({ x: 1, y: 0 });      // 1x2 skips the taken cell
+    expect(s.player.equipment.weapon).toBeNull();     // v1 had no equipment
+    expect(s.player.overflow).toEqual([]);
+    expect(s.player.leech).toBe(1);
+  });
+});
+
+describe('inventory grid', () => {
+  it('firstFreeCell fills row-major and skips multi-cell footprints', () => {
+    const placed: { defId: string; x: number; y: number }[] = [];
+    expect(firstFreeCell(placed, 1, 1)).toEqual({ x: 0, y: 0 });
+    placed.push({ defId: 'slime_gel', x: 0, y: 0 });
+    expect(firstFreeCell(placed, 1, 2)).toEqual({ x: 1, y: 0 }); // iron_sword can't start on the taken cell
+    placed.push({ defId: 'iron_sword', x: 1, y: 0 });            // occupies (1,0) and (1,1)
+    expect(firstFreeCell(placed, 1, 1)).toEqual({ x: 2, y: 0 });
+  });
+
+  it('firstFreeCell returns null when the grid is full', () => {
+    const placed: { defId: string; x: number; y: number }[] = [];
+    for (let y = 0; y < INV_H; y++)
+      for (let x = 0; x < INV_W; x++) placed.push({ defId: 'slime_gel', x, y });
+    expect(firstFreeCell(placed, 1, 1)).toBeNull();
+  });
+
+  it('addToInventory places gear in the grid and overflows past capacity', () => {
+    const s = newGame(1);
+    // iron_sword is 1x2 (2 cells); the 10x6 grid holds exactly 30 of them.
+    for (let i = 0; i < 30; i++) addToInventory(s.player, 'iron_sword', 1);
+    expect(s.player.inventory).toHaveLength(30);
+    expect(s.player.overflow).toHaveLength(0);
+    addToInventory(s.player, 'iron_sword', 1); // 31st — no room
+    expect(s.player.inventory).toHaveLength(30);
+    expect(s.player.overflow).toEqual([{ defId: 'iron_sword', qty: 1 }]);
+  });
+
+  it('addToInventory stacks stackables into a single 1x1 cell', () => {
+    const s = newGame(1);
+    addToInventory(s.player, 'slime_gel', 5);
+    addToInventory(s.player, 'slime_gel', 3);
+    expect(s.player.inventory).toHaveLength(1);
+    expect(s.player.inventory[0]).toMatchObject({ defId: 'slime_gel', qty: 8, x: 0, y: 0 });
+  });
+});
+
+describe('attributes: attackSpeed', () => {
+  const CLASSES = ['warrior', 'ninja', 'wizard', 'priest'] as const;
+  const noStats = { VIT: 0, INT: 0, STR: 0, DEX: 0 };
+
+  it('every class has a positive attackSpeed base', () => {
+    for (const c of CLASSES) expect(baseAttributes(c).attackSpeed).toBeGreaterThan(0);
+  });
+
+  it('effectiveAttributes folds spent DEX into attackSpeed', () => {
+    const base = baseAttributes('ninja').attackSpeed;
+    const withDex = effectiveAttributes('ninja', { ...noStats, DEX: 10 }).attackSpeed;
+    expect(withDex).toBeGreaterThan(base);
+  });
+
+  it('DEX raises attackSpeed per the class DEX modifier (ninja > warrior)', () => {
+    const dex = 10;
+    const gain = (c: 'ninja' | 'warrior') =>
+      effectiveAttributes(c, { ...noStats, DEX: dex }).attackSpeed - baseAttributes(c).attackSpeed;
+    // STAT_EFFECTS.DEX.attackSpeed = 1/pt; ninja DEX modifier 130%, warrior 90%
+    expect(gain('ninja')).toBeCloseTo(dex * 1.30);
+    expect(gain('warrior')).toBeCloseTo(dex * 0.90);
+    expect(gain('ninja')).toBeGreaterThan(gain('warrior'));
   });
 });
