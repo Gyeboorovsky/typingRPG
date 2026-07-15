@@ -1,10 +1,11 @@
 // All world art is drawn here as flat vector shapes. Every function takes the
 // entity's tile-center screen position (sx, sy) and paints relative to it.
 import { TILE_H, TILE_W } from '../game/constants';
-import type { Dir } from '../game/types';
+import type { ClassId, Dir } from '../game/types';
 import { PAL } from './palette';
 
 const HW = TILE_W / 2, HH = TILE_H / 2; // 32, 16
+type PlayerLook = typeof PAL.classLooks[ClassId];
 
 function diamond(ctx: CanvasRenderingContext2D, sx: number, sy: number, w = HW, h = HH): void {
   ctx.beginPath();
@@ -86,11 +87,12 @@ export function drawRock(ctx: CanvasRenderingContext2D, sx: number, sy: number):
 
 export function drawPlayer(
   ctx: CanvasRenderingContext2D, sx: number, sy: number,
-  t: number, dir: Dir, walking: boolean, animT: number, dead: boolean,
+  t: number, dir: Dir, walking: boolean, animT: number, dead: boolean, classId: ClassId,
 ): void {
+  const look = PAL.classLooks[classId];
   drawShadow(ctx, sx, sy + 1, 12);
   if (dead) {
-    ctx.fillStyle = PAL.bodyDark;
+    ctx.fillStyle = look.bodyDark;
     ctx.beginPath();
     ctx.ellipse(sx, sy - 4, 14, 6, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -99,46 +101,123 @@ export function drawPlayer(
   const bob = walking ? Math.sin(animT * 14) * 1.6 : Math.sin(t * 2) * 1;
   const swing = walking ? Math.sin(animT * 14) * 4 : 0;
   const y = sy + bob;
+  const side = dir === 0 || dir === 1 ? 1 : -1; // facing side → weapon hand
+
   // legs
-  ctx.fillStyle = PAL.legs;
+  ctx.fillStyle = look.legs;
   ctx.fillRect(sx - 6 + swing * 0.5, y - 11, 5, 11);
   ctx.fillRect(sx + 1 - swing * 0.5, y - 11, 5, 11);
-  // torso (tabard)
-  ctx.fillStyle = PAL.body;
-  ctx.beginPath();
-  ctx.roundRect(sx - 9, y - 27, 18, 18, 4);
-  ctx.fill();
-  ctx.fillStyle = PAL.bodyDark; // belt
-  ctx.fillRect(sx - 9, y - 13, 18, 3);
-  // head
+
+  drawTorso(ctx, sx, y, classId, look);
+  drawHeadwear(ctx, sx, y, classId, look);
+  drawWeapon(ctx, sx, y, side, classId, look, t);
+}
+
+function drawTorso(ctx: CanvasRenderingContext2D, sx: number, y: number, classId: ClassId, look: PlayerLook): void {
+  ctx.fillStyle = look.body;
+  if (classId === 'wizard' || classId === 'priest') { // flowing robe, wider at the hem
+    ctx.beginPath();
+    ctx.moveTo(sx - 6, y - 27);
+    ctx.lineTo(sx + 6, y - 27);
+    ctx.lineTo(sx + 10, y - 9);
+    ctx.lineTo(sx - 10, y - 9);
+    ctx.closePath();
+    ctx.fill();
+  } else if (classId === 'ninja') { // lean, cropped tunic
+    ctx.beginPath();
+    ctx.roundRect(sx - 7.5, y - 25, 15, 15, 3);
+    ctx.fill();
+  } else { // warrior tabard
+    ctx.beginPath();
+    ctx.roundRect(sx - 9, y - 27, 18, 18, 4);
+    ctx.fill();
+  }
+  ctx.fillStyle = look.bodyDark; // belt
+  ctx.fillRect(sx - (classId === 'ninja' ? 7.5 : 9), y - 13, classId === 'ninja' ? 15 : 18, 3);
+}
+
+function drawHeadwear(ctx: CanvasRenderingContext2D, sx: number, y: number, classId: ClassId, look: PlayerLook): void {
   ctx.fillStyle = PAL.skin;
   ctx.beginPath();
   ctx.arc(sx, y - 33, 6.5, 0, Math.PI * 2);
   ctx.fill();
-  ctx.fillStyle = PAL.hair;
-  ctx.beginPath();
-  ctx.arc(sx, y - 35, 6.2, Math.PI, Math.PI * 2);
-  ctx.fill();
-  // sword, held on the facing side (up/right → right hand)
-  const side = dir === 0 || dir === 1 ? 1 : -1;
+  ctx.fillStyle = look.hair;
+  if (classId === 'ninja') { // hood + face mask, only eyes visible
+    ctx.beginPath();
+    ctx.arc(sx, y - 33.5, 6.8, Math.PI * 1.05, Math.PI * 1.95);
+    ctx.fill();
+    ctx.fillRect(sx - 6, y - 33, 12, 4);
+    ctx.fillStyle = PAL.eye;
+    ctx.fillRect(sx - 4, y - 34, 8, 1.6);
+  } else if (classId === 'wizard') { // pointed hat
+    ctx.beginPath();
+    ctx.arc(sx, y - 35, 6.2, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(sx - 6.5, y - 37);
+    ctx.lineTo(sx + 6.5, y - 37);
+    ctx.lineTo(sx, y - 54);
+    ctx.closePath();
+    ctx.fill();
+  } else if (classId === 'priest') { // simple halo instead of hair
+    ctx.beginPath();
+    ctx.arc(sx, y - 35, 6.2, Math.PI, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = look.accentEdge;
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.ellipse(sx, y - 42, 6, 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  } else { // warrior hair
+    ctx.beginPath();
+    ctx.arc(sx, y - 35, 6.2, Math.PI, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawWeapon(
+  ctx: CanvasRenderingContext2D, sx: number, y: number, side: number,
+  classId: ClassId, look: PlayerLook, t: number,
+): void {
   const hx = sx + side * 11, hy = y - 14;
+  if (classId === 'wizard' || classId === 'priest') { // staff with a glowing orb
+    ctx.strokeStyle = PAL.hilt;
+    ctx.lineWidth = 2.4;
+    ctx.beginPath();
+    ctx.moveTo(hx, hy + 8);
+    ctx.lineTo(hx, hy - 20);
+    ctx.stroke();
+    const glow = 0.6 + 0.4 * Math.sin(t * 4);
+    ctx.fillStyle = look.accent;
+    ctx.beginPath();
+    ctx.arc(hx, hy - 22, 4, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = glow;
+    ctx.fillStyle = look.accentEdge;
+    ctx.beginPath();
+    ctx.arc(hx, hy - 22, 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalAlpha = 1;
+    return;
+  }
+  const reach = classId === 'ninja' ? 6 : 9; // short kunai vs longer sword
   ctx.strokeStyle = PAL.hilt;
   ctx.lineWidth = 3;
   ctx.beginPath();
   ctx.moveTo(hx - side * 3, hy + 3);
   ctx.lineTo(hx, hy);
   ctx.stroke();
-  ctx.strokeStyle = PAL.sword;
-  ctx.lineWidth = 3.5;
+  ctx.strokeStyle = look.accent;
+  ctx.lineWidth = classId === 'ninja' ? 2.4 : 3.5;
   ctx.beginPath();
   ctx.moveTo(hx, hy);
-  ctx.lineTo(hx + side * 9, hy - 16);
+  ctx.lineTo(hx + side * reach, hy - reach * 1.8);
   ctx.stroke();
-  ctx.strokeStyle = PAL.swordEdge;
+  ctx.strokeStyle = look.accentEdge;
   ctx.lineWidth = 1.2;
   ctx.beginPath();
   ctx.moveTo(hx, hy);
-  ctx.lineTo(hx + side * 9, hy - 16);
+  ctx.lineTo(hx + side * reach, hy - reach * 1.8);
   ctx.stroke();
   ctx.lineWidth = 1;
 }

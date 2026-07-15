@@ -37,6 +37,8 @@
       <div id="corner">
         <span id="save-dot" title="saved">●</span>
         <button id="save-file" class="hidden">Save to file</button>
+        <button id="cs-open-btn">Characters</button>
+        <button id="stats-open-btn">Character</button>
         <span class="hint">Tab — Inventory</span>
       </div>
       <div id="inventory" class="hidden">
@@ -45,20 +47,46 @@
         <p class="hint">Esc / Tab to close</p>
       </div>
       <div id="statspanel" class="hidden">
-        <h2>Attributes <span id="stat-points-left"></span></h2>
-        <div id="stat-rows">
-          <div class="stat-row"><span class="stat-name">VIT</span><span class="stat-val" id="stat-val-VIT"></span><button class="stat-plus" data-stat="VIT">+</button></div>
-          <div class="stat-row"><span class="stat-name">INT</span><span class="stat-val" id="stat-val-INT"></span><button class="stat-plus" data-stat="INT">+</button></div>
-          <div class="stat-row"><span class="stat-name">STR</span><span class="stat-val" id="stat-val-STR"></span><button class="stat-plus" data-stat="STR">+</button></div>
-          <div class="stat-row"><span class="stat-name">DEX</span><span class="stat-val" id="stat-val-DEX"></span><button class="stat-plus" data-stat="DEX">+</button></div>
+        <div id="stats-header">
+          <span>Character</span>
+          <button id="stats-close-btn" title="Close">×</button>
         </div>
-        <p class="hint">Esc to close</p>
+        <div id="stats-body">
+          <section>
+            <h3>Statistics <span id="stat-points-left"></span></h3>
+            <div id="stat-rows">
+              <div class="stat-row"><span class="stat-name">VIT</span><span class="stat-val" id="stat-val-VIT"></span><button class="stat-plus" data-stat="VIT">+</button></div>
+              <div class="stat-row"><span class="stat-name">INT</span><span class="stat-val" id="stat-val-INT"></span><button class="stat-plus" data-stat="INT">+</button></div>
+              <div class="stat-row"><span class="stat-name">STR</span><span class="stat-val" id="stat-val-STR"></span><button class="stat-plus" data-stat="STR">+</button></div>
+              <div class="stat-row"><span class="stat-name">DEX</span><span class="stat-val" id="stat-val-DEX"></span><button class="stat-plus" data-stat="DEX">+</button></div>
+            </div>
+          </section>
+          <section>
+            <h3>Attributes</h3>
+            <div id="attr-rows">
+              <div class="attr-row"><span class="attr-name">Health</span><span class="attr-val" id="attr-val-health"></span></div>
+              <div class="attr-row"><span class="attr-name">Energy</span><span class="attr-val" id="attr-val-energy"></span></div>
+              <div class="attr-row"><span class="attr-name">Defense</span><span class="attr-val" id="attr-val-defense"></span></div>
+              <div class="attr-row"><span class="attr-name">Physical dmg</span><span class="attr-val" id="attr-val-physicalDamage"></span></div>
+              <div class="attr-row"><span class="attr-name">Magic dmg</span><span class="attr-val" id="attr-val-magicDamage"></span></div>
+              <div class="attr-row"><span class="attr-name">Move speed</span><span class="attr-val" id="attr-val-movementSpeed"></span></div>
+              <div class="attr-row"><span class="attr-name">Dodge</span><span class="attr-val" id="attr-val-dodge"></span></div>
+            </div>
+          </section>
+        </div>
       </div>
       <div id="death" class="hidden">
         <h1>You died</h1>
         <p>Press <b>Enter</b> to respawn</p>
       </div>
       <div id="kbd-note" class="hidden">Best played with a physical keyboard</div>
+    </div>
+    <div id="charselect" class="hidden">
+      <div id="cs-panel">
+        <h1>Characters</h1>
+        <div id="cs-slots"></div>
+        <p class="hint">Pick a character to play. Max 4 slots.</p>
+      </div>
     </div>
   </div>
   <script type="module" src="/src/main.ts"></script>

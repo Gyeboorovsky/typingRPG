@@ -16,14 +16,14 @@ export const CLASSES: Record<ClassId, ClassDef> = {
     hpRegen: 2, hpRegenCombat: 0.5, mpRegen: 3.5, baseDamage: 1,
     ult: { id: 'shadowstrike', name: 'Shadow Strike', manaCost: 25, streakThreshold: 25, cooldown: 5 },
   },
-  sura: {
-    id: 'sura', name: 'Sura',
+  wizard: {
+    id: 'wizard', name: 'Wizard',
     baseHp: 90, hpPerLevel: 17, baseMp: 70, mpPerLevel: 14,
     hpRegen: 2, hpRegenCombat: 0.5, mpRegen: 4, baseDamage: 1,
     ult: { id: 'flamespirit', name: 'Flame Spirit', manaCost: 35, streakThreshold: 30, cooldown: 6 },
   },
-  shaman: {
-    id: 'shaman', name: 'Shaman',
+  priest: {
+    id: 'priest', name: 'Priest',
     baseHp: 75, hpPerLevel: 14, baseMp: 90, mpPerLevel: 18,
     hpRegen: 2.5, hpRegenCombat: 1, mpRegen: 5, baseDamage: 1,
     ult: { id: 'lightning', name: 'Lightning Totem', manaCost: 40, streakThreshold: 30, cooldown: 6 },

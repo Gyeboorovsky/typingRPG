@@ -49,6 +49,7 @@
   /* elevation & bevels (reusable shadow recipes) */
   --sh-panel: 0 8px 22px rgba(0, 0, 0, 0.32), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   --sh-float: 0 12px 34px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  --sh-modal: 0 30px 70px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   --sh-sunk: inset 0 2px 4px rgba(0, 0, 0, 0.55);
   --bevel-top: inset 0 1px 0 rgba(255, 255, 255, 0.4); /* glossy top edge on fills/buttons */
 
@@ -67,7 +68,8 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
 .hint { color: var(--dim); font-size: 12px; font-weight: 700; }
 ::selection { background: var(--acc); color: var(--bg-0); }
 
-/* ---- floating HUD panel: the shared "glass card" look ---- */
+/* ---- shared building blocks ------------------------------------------- */
+/* floating HUD panel: the glass card used across the overlay */
 .panel {
   background: var(--glass);
   border: 1px solid var(--border);
@@ -75,6 +77,22 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   box-shadow: var(--sh-float);
   backdrop-filter: blur(4px);
 }
+/* chunky beveled button recipes (composed by component rules below) */
+.btn {
+  cursor: pointer; font-family: inherit; font-weight: 900;
+  color: var(--bg-0); border: none; border-radius: var(--r);
+  background: linear-gradient(180deg, var(--acc-a), var(--acc-b));
+  box-shadow: 0 4px 0 var(--acc-under), 0 8px 16px rgba(42, 158, 106, 0.35), var(--bevel-top);
+  transition: transform 0.1s, filter 0.1s, box-shadow 0.1s;
+}
+.btn:hover { filter: brightness(1.08); }
+.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--acc-under), var(--bevel-top); }
+.btn.neutral {
+  color: var(--text);
+  background: linear-gradient(180deg, #2b3941, #212d34);
+  box-shadow: 0 4px 0 #131b1f, 0 8px 16px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+.btn.neutral:active { box-shadow: 0 1px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08); }
 
 /* ============================================================
    STATUS BARS  (health / mana / XP segments)
@@ -128,25 +146,7 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   transition: width 120ms linear, box-shadow 150ms ease;
 }
 
-/* ============================================================
-   BUTTONS  (chunky beveled — primary green / neutral / small)
-   ============================================================ */
-.btn {
-  cursor: pointer; font-family: inherit; font-weight: 900;
-  color: var(--bg-0); border: none; border-radius: var(--r);
-  background: linear-gradient(180deg, var(--acc-a), var(--acc-b));
-  box-shadow: 0 4px 0 var(--acc-under), 0 8px 16px rgba(42, 158, 106, 0.35), var(--bevel-top);
-  transition: transform 0.1s, filter 0.1s, box-shadow 0.1s;
-}
-.btn:hover { filter: brightness(1.08); }
-.btn:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--acc-under), var(--bevel-top); }
-.btn.neutral {
-  color: var(--text);
-  background: linear-gradient(180deg, #2b3941, #212d34);
-  box-shadow: 0 4px 0 #131b1f, 0 8px 16px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.08);
-}
-.btn.neutral:active { box-shadow: 0 1px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08); }
-
+/* stats-btn: the "+N unspent points" pill next to the level bar */
 #stats-btn {
   pointer-events: auto; color: var(--bg-0);
   border: none; border-radius: 10px; padding: 3px 10px;
@@ -216,39 +216,119 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
 }
 
 /* ============================================================
-   CORNER  (save status + file button)
+   CORNER  (save status + neutral beveled buttons)
    ============================================================ */
-#corner { position: absolute; bottom: 14px; right: 14px; display: flex; align-items: center; gap: 12px; }
+#corner { position: absolute; bottom: 14px; right: 14px; display: flex; align-items: center; gap: 10px; }
 #save-dot { color: var(--acc); font-size: 11px; filter: drop-shadow(0 0 4px rgba(62, 201, 138, 0.6)); }
 #save-dot.dirty { color: var(--dim); filter: none; }
-#save-file {
+#save-file, #cs-open-btn, #stats-open-btn {
   color: var(--text); border: 1px solid var(--border-lt); border-radius: 10px;
   padding: 7px 14px; font-size: 12px; font-weight: 900; cursor: pointer;
   background: linear-gradient(180deg, #2b3941, #212d34);
   box-shadow: 0 3px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transition: transform 0.1s, filter 0.1s;
 }
-#save-file:hover { filter: brightness(1.12); }
-#save-file:active { transform: translateY(2px); box-shadow: 0 1px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+#save-file:hover, #cs-open-btn:hover, #stats-open-btn:hover { filter: brightness(1.12); }
+#save-file:active, #cs-open-btn:active, #stats-open-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08); }
 
 /* ============================================================
-   PANELS  (inventory + attributes) — raised card with header
+   CHARACTER SELECT  (full-screen picker — create / switch / delete)
    ============================================================ */
-#inventory, #statspanel {
+#charselect {
+  position: absolute; inset: 0; z-index: 10; pointer-events: auto;
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(1000px 700px at 50% -10%, rgba(23, 36, 43, 0.92), rgba(10, 14, 17, 0.95));
+  backdrop-filter: blur(3px);
+}
+#cs-panel {
+  background: var(--panel);
+  border: 1px solid var(--border-lt);
+  border-radius: 20px;
+  padding: 26px 30px; text-align: center; max-width: min(600px, 92vw);
+  box-shadow: var(--sh-modal);
+}
+#cs-panel h1 { font-size: 24px; font-weight: 900; margin-bottom: 18px; letter-spacing: 0.01em; }
+#cs-slots { display: grid; grid-template-columns: repeat(2, 1fr); gap: 14px; margin-bottom: 14px; }
+
+.cs-card {
+  background: var(--bg-sunk);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  box-shadow: var(--sh-sunk);
+  padding: 16px; min-height: 108px;
+  display: flex; flex-direction: column; gap: 9px; justify-content: center;
+}
+.cs-name { font-weight: 900; font-size: 15px; }
+.cs-tag {
+  font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--acc); background: rgba(62, 201, 138, 0.12);
+  border: 1px solid var(--acc-b); border-radius: 6px; padding: 2px 7px; margin-left: 6px;
+}
+.cs-meta { color: var(--dim); font-size: 13px; font-weight: 700; }
+.cs-actions { display: flex; gap: 8px; justify-content: center; margin-top: 2px; }
+.cs-actions button {
+  cursor: pointer; font-family: inherit; font-weight: 900; font-size: 13px;
+  padding: 8px 15px; border-radius: 9px; border: none;
+  transition: transform 0.1s, filter 0.1s;
+}
+.cs-actions button:active { transform: translateY(2px); }
+.cs-play, .cs-create {
+  color: var(--bg-0);
+  background: linear-gradient(180deg, var(--acc-a), var(--acc-b));
+  box-shadow: 0 3px 0 var(--acc-under), var(--bevel-top);
+}
+.cs-play:hover, .cs-create:hover { filter: brightness(1.08); }
+.cs-play:active, .cs-create:active { box-shadow: 0 1px 0 var(--acc-under), var(--bevel-top); }
+.cs-new {
+  color: var(--acc); background: rgba(62, 201, 138, 0.1);
+  border: 1px solid var(--acc-b); box-shadow: none;
+}
+.cs-new:hover { background: rgba(62, 201, 138, 0.18); }
+.cs-delete {
+  color: #fff;
+  background: linear-gradient(180deg, var(--hp), var(--hp-b));
+  box-shadow: 0 3px 0 var(--hp-under), var(--bevel-top);
+}
+.cs-delete:hover { filter: brightness(1.06); }
+.cs-delete:active { box-shadow: 0 1px 0 var(--hp-under), var(--bevel-top); }
+.cs-cancel { color: var(--dim); background: transparent; box-shadow: none; }
+.cs-cancel:hover { color: var(--text); }
+
+.cs-class-row { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.cs-class {
+  cursor: pointer; font-family: inherit; font-weight: 800; font-size: 12px;
+  color: var(--dim); background: var(--bg-sunk);
+  border: 1px solid var(--border); border-radius: var(--r-sm); padding: 6px 11px;
+  box-shadow: var(--sh-sunk); transition: color 0.12s, border-color 0.12s;
+}
+.cs-class:hover { color: var(--text); border-color: var(--border-lt); }
+.cs-class.selected {
+  color: var(--bg-0); border-color: transparent;
+  background: linear-gradient(180deg, var(--acc-a), var(--acc-b));
+  box-shadow: var(--bevel-top);
+}
+.cs-input {
+  font-family: inherit; font-weight: 700; font-size: 13px; text-align: center;
+  color: var(--text); background: var(--bg-sunk);
+  border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px;
+  box-shadow: var(--sh-sunk); outline: none; transition: border-color 0.12s;
+}
+.cs-input:focus { border-color: var(--acc); }
+.cs-input::placeholder { color: var(--mute); }
+
+/* ============================================================
+   INVENTORY  (centered modal panel)
+   ============================================================ */
+#inventory {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   background: var(--panel);
   border: 1px solid var(--border-lt);
   border-radius: 18px;
   padding: 20px 22px; text-align: center;
-  box-shadow: 0 30px 70px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  box-shadow: var(--sh-modal);
 }
-#statspanel { pointer-events: auto; }
-#inventory h2, #statspanel h2 {
-  font-size: 17px; font-weight: 900; margin-bottom: 14px;
-  letter-spacing: 0.01em;
-}
+#inventory h2 { font-size: 17px; font-weight: 900; margin-bottom: 14px; letter-spacing: 0.01em; }
 
-/* inventory grid */
 #inv-grid { display: grid; grid-template-columns: repeat(5, 58px); gap: 8px; margin-bottom: 12px; }
 .slot {
   position: relative; width: 58px; height: 58px;
@@ -268,23 +348,56 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
 .slot .qty { position: absolute; bottom: 3px; right: 5px; color: var(--text); font-weight: 900; font-size: 12px; text-shadow: 0 1px 2px #000; }
 .slot .icon { font-size: 20px; line-height: 1; }
 
-/* attributes panel */
-#stat-points-left { color: var(--gold); font-size: 13px; font-weight: 800; margin-left: 4px; }
-#stat-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
-.stat-row {
-  display: flex; align-items: center; gap: 10px; width: 180px;
-  padding: 6px 8px 6px 12px;
+/* ============================================================
+   CHARACTER WINDOW  (draggable, non-modal)
+   Statistics (spendable STR/VIT/INT/DEX) + derived Attributes.
+   ============================================================ */
+#statspanel {
+  position: absolute; top: 90px; left: 20px; width: 244px;
+  background: var(--panel);
+  border: 1px solid var(--border-lt);
+  border-radius: var(--r-lg);
+  pointer-events: auto; overflow: hidden;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+#stats-header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 11px 14px; cursor: grab; user-select: none;
+  font-weight: 900; font-size: 14px; letter-spacing: 0.01em;
+  background: linear-gradient(180deg, var(--panel-top), var(--panel));
+  border-bottom: 1px solid var(--border);
+}
+#stats-header.dragging { cursor: grabbing; }
+#stats-close-btn {
+  cursor: pointer; width: 26px; height: 26px; border-radius: var(--r-sm);
+  border: 1px solid var(--border-lt); background: var(--bg-sunk);
+  color: var(--dim); font-family: inherit; font-weight: 900; font-size: 15px; line-height: 1;
+  transition: color 0.12s, border-color 0.12s;
+}
+#stats-close-btn:hover { color: var(--text); border-color: var(--acc); }
+#stats-body { padding: 14px; display: flex; flex-direction: column; gap: 16px; }
+#stats-body h3 {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em;
+  font-weight: 900; color: var(--acc); margin-bottom: 9px; text-align: left;
+}
+#stat-points-left { color: var(--gold); font-size: 11px; font-weight: 800; text-transform: none; letter-spacing: normal; margin-left: 4px; }
+#stat-rows, #attr-rows { display: flex; flex-direction: column; gap: 6px; }
+.stat-row, .attr-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px 6px 11px;
   background: var(--bg-sunk);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 9px;
   box-shadow: var(--sh-sunk);
 }
-.stat-name { width: 34px; text-align: left; color: var(--acc); font-weight: 900; letter-spacing: 0.04em; }
-.stat-val { flex: 1; text-align: right; font-weight: 900; font-variant-numeric: tabular-nums; }
+.stat-name, .attr-name { flex: 1; text-align: left; font-size: 12px; }
+.stat-name { color: var(--acc); font-weight: 900; letter-spacing: 0.04em; }
+.attr-name { color: var(--dim); font-weight: 800; }
+.stat-val, .attr-val { text-align: right; font-weight: 900; font-size: 12px; font-variant-numeric: tabular-nums; }
 .stat-plus {
   pointer-events: auto; color: var(--bg-0);
-  border: none; border-radius: 8px;
-  width: 26px; height: 26px; font-size: 15px; font-weight: 900; cursor: pointer;
+  border: none; border-radius: var(--r-sm);
+  width: 24px; height: 24px; font-size: 14px; font-weight: 900; cursor: pointer;
   background: linear-gradient(180deg, var(--acc-a), var(--acc-b));
   box-shadow: 0 3px 0 var(--acc-under), var(--bevel-top);
   transition: transform 0.1s, filter 0.1s;
@@ -325,6 +438,7 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   #inv-grid { grid-template-columns: repeat(5, 46px); }
   .slot { width: 46px; height: 46px; }
 }
+@media (max-width: 500px) { #cs-slots { grid-template-columns: 1fr; } }
 
 /* ============================================================
    ANIMATIONS

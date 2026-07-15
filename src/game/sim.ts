@@ -8,14 +8,14 @@ import { resolveKeystroke, syncCombat, tryUltimate } from './combat';
 import { addToInventory, ITEMS } from './items';
 import { circleBlocked, isBlocked, SPAWN } from './map';
 import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
-import type { GameState, InputEvent, SaveData } from './types';
+import type { ClassId, GameState, InputEvent, SaveData } from './types';
 import { DIR_VECS, dist, playerWorldPos } from './types';
 
-export function newGame(seed: number): GameState {
+export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior'): GameState {
   const state: GameState = {
     tick: 0, rng: seed | 0,
     player: {
-      classId: 'warrior', pos: { ...SPAWN }, dir: 0,
+      name, classId, pos: { ...SPAWN }, dir: 0,
       hp: 0, mp: 0, level: 1, xp: 0, stats: emptyStats(), statPoints: 0,
       inventory: [], invRev: 0,
       dead: false, ultCooldown: 0, animT: 0,
@@ -116,7 +116,7 @@ export function makeSave(state: GameState): SaveData {
   return {
     v: 1, savedAt: '',
     player: {
-      classId: p.classId, level: p.level, xp: p.xp, hp: p.hp, mp: p.mp,
+      name: p.name, classId: p.classId, level: p.level, xp: p.xp, hp: p.hp, mp: p.mp,
       pos: { ...p.pos }, inventory: p.inventory.map((s) => ({ ...s })),
       stats: { ...p.stats }, statPoints: p.statPoints,
     },
@@ -126,6 +126,7 @@ export function makeSave(state: GameState): SaveData {
 
 export function applySave(state: GameState, save: SaveData): void {
   const p = state.player;
+  p.name = save.player.name || 'Hero';
   p.classId = save.player.classId;
   p.level = Math.max(1, save.player.level);
   p.xp = Math.max(0, save.player.xp);

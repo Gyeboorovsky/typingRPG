@@ -19,8 +19,8 @@ export const STAT_IDS: readonly StatId[] = ['VIT', 'INT', 'STR', 'DEX'];
 const CLASS_BASE_EXTRA: Record<ClassId, Omit<Attributes, 'health' | 'energy'>> = {
   warrior: { defense: 5, physicalDamage: 8, magicDamage: 1, movementSpeed: 4, dodge: 3 },
   ninja: { defense: 3, physicalDamage: 7, magicDamage: 1, movementSpeed: 6, dodge: 8 },
-  sura: { defense: 4, physicalDamage: 6, magicDamage: 5, movementSpeed: 5, dodge: 4 },
-  shaman: { defense: 2, physicalDamage: 3, magicDamage: 9, movementSpeed: 4, dodge: 3 },
+  wizard: { defense: 4, physicalDamage: 6, magicDamage: 5, movementSpeed: 5, dodge: 4 },
+  priest: { defense: 2, physicalDamage: 3, magicDamage: 9, movementSpeed: 4, dodge: 3 },
 };
 
 export function baseAttributes(classId: ClassId): Attributes {
@@ -40,8 +40,8 @@ export const STAT_EFFECTS: Record<StatId, Partial<Attributes>> = {
 export const CLASS_STAT_MODIFIERS: Record<ClassId, Record<StatId, number>> = {
   warrior: { VIT: 120, INT: 70, STR: 120, DEX: 90 },
   ninja: { VIT: 90, INT: 80, STR: 100, DEX: 130 },
-  sura: { VIT: 100, INT: 110, STR: 110, DEX: 100 },
-  shaman: { VIT: 90, INT: 130, STR: 70, DEX: 100 },
+  wizard: { VIT: 100, INT: 110, STR: 110, DEX: 100 },
+  priest: { VIT: 90, INT: 130, STR: 70, DEX: 100 },
 };
 
 /** Base attributes plus the effect of all spent stat points, for a class. */

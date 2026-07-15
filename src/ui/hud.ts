@@ -1,8 +1,8 @@
-// DOM HUD overlay: bars, typing prompt, boss bar, toasts, inventory,
-// attributes panel, death screen. Reads state each frame but only touches
-// the DOM when values change.
-import { STAT_IDS } from '../game/attributes';
-import type { StatId } from '../game/attributes';
+// DOM HUD overlay: bars, typing prompt, boss bar, toasts, inventory, the
+// draggable statistics/attributes window, death screen. Reads state each
+// frame but only touches the DOM when values change.
+import { effectiveAttributes, STAT_IDS } from '../game/attributes';
+import type { AttributeId, StatId } from '../game/attributes';
 import { classOf, maxHp, maxMp } from '../game/classes';
 import { aggroed, radiusFor } from '../game/combat';
 import { XP_CURVE } from '../game/constants';
@@ -13,6 +13,7 @@ import type { Fx, GameState } from '../game/types';
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 
 const INV_SLOTS = 30;
+const ATTR_IDS: AttributeId[] = ['health', 'energy', 'defense', 'physicalDamage', 'magicDamage', 'movementSpeed', 'dodge'];
 
 export class Hud {
   private els = {
@@ -26,9 +27,12 @@ export class Hud {
     streak: $('streak'), radius: $('radius'), ultHint: $('ult-hint'),
     bossbar: $('bossbar'), bossName: $('boss-name'), bossFill: $('boss-fill'), bossBanner: $('boss-banner'),
     toasts: $('toasts'), inventory: $('inventory'), invGrid: $('inv-grid'),
-    statspanel: $('statspanel'), statPointsLeft: $('stat-points-left'),
+    statspanel: $('statspanel'), statsHeader: $('stats-header'),
+    statsOpenBtn: $('stats-open-btn'), statsCloseBtn: $('stats-close-btn'),
+    statPointsLeft: $('stat-points-left'),
     statVals: Object.fromEntries(STAT_IDS.map((s) => [s, $(`stat-val-${s}`)])) as Record<StatId, HTMLElement>,
     statPlusBtns: Array.from(document.querySelectorAll<HTMLButtonElement>('.stat-plus')),
+    attrVals: Object.fromEntries(ATTR_IDS.map((a) => [a, $(`attr-val-${a}`)])) as Record<AttributeId, HTMLElement>,
     death: $('death'), saveDot: $('save-dot'),
   };
   private invOpen = false;
@@ -40,9 +44,37 @@ export class Hud {
 
   constructor() {
     this.els.statsBtn.addEventListener('click', () => this.statsOpen ? this.closeStats() : this.openStats());
+    this.els.statsOpenBtn.addEventListener('click', () => this.statsOpen ? this.closeStats() : this.openStats());
+    this.els.statsCloseBtn.addEventListener('click', () => this.closeStats());
     for (const btn of this.els.statPlusBtns) {
       btn.addEventListener('click', () => this.onAllocateStat(btn.dataset.stat as StatId));
     }
+    this.initDrag();
+  }
+
+  /** Drag the character window by its header; position is clamped to stay on screen. */
+  private initDrag(): void {
+    const panel = this.els.statspanel, header = this.els.statsHeader;
+    let dragging = false, dx = 0, dy = 0;
+    header.addEventListener('pointerdown', (e) => {
+      if ((e.target as HTMLElement).closest('button')) return; // let the close button handle its own click
+      dragging = true;
+      header.classList.add('dragging');
+      header.setPointerCapture(e.pointerId);
+      const r = panel.getBoundingClientRect();
+      dx = e.clientX - r.left;
+      dy = e.clientY - r.top;
+    });
+    header.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const maxX = window.innerWidth - panel.offsetWidth;
+      const maxY = window.innerHeight - panel.offsetHeight;
+      panel.style.left = `${Math.max(0, Math.min(maxX, e.clientX - dx))}px`;
+      panel.style.top = `${Math.max(0, Math.min(maxY, e.clientY - dy))}px`;
+    });
+    const stop = (): void => { dragging = false; header.classList.remove('dragging'); };
+    header.addEventListener('pointerup', stop);
+    header.addEventListener('pointercancel', stop);
   }
 
   /** Set textContent/width only when the value changed since last frame. */
@@ -169,6 +201,12 @@ export class Hud {
       this.els.statVals[stat].textContent = String(p.stats[stat]);
     }
     for (const btn of this.els.statPlusBtns) btn.disabled = p.statPoints <= 0;
+
+    const attrs = effectiveAttributes(p.classId, p.stats);
+    for (const attr of ATTR_IDS) {
+      const v = attrs[attr];
+      this.els.attrVals[attr].textContent = attr === 'dodge' ? `${v.toFixed(1)}%` : String(Math.round(v));
+    }
   }
 
   setSaveStatus(clean: boolean): void {
