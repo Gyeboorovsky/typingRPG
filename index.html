@@ -42,9 +42,26 @@
         <span class="hint">Tab — Inventory</span>
       </div>
       <div id="inventory" class="hidden">
-        <h2>Inventory</h2>
-        <div id="inv-grid"></div>
-        <p class="hint">Esc / Tab to close</p>
+        <div id="inv-top">
+          <h2>Inventory</h2>
+          <button id="inv-close-btn" title="Close">×</button>
+        </div>
+        <div id="inv-body">
+          <div id="equip-pane">
+            <div class="eq-slot" data-slot="helmet"></div>
+            <div class="eq-slot" data-slot="necklace"></div>
+            <div class="eq-slot" data-slot="armor"></div>
+            <div class="eq-slot" data-slot="weapon"></div>
+            <div class="eq-slot" data-slot="ring"></div>
+            <div class="eq-slot" data-slot="boots"></div>
+          </div>
+          <div id="inv-grid"></div>
+        </div>
+        <div id="inv-foot">
+          <span id="inv-gold">💰 <b id="inv-gold-val">0</b></span>
+          <span id="inv-overflow" class="hidden"></span>
+          <span class="hint">Esc / Tab to close · double-click to equip</span>
+        </div>
       </div>
       <div id="statspanel" class="hidden">
         <div id="stats-header">

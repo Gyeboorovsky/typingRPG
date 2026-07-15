@@ -5,15 +5,20 @@ import { effectiveAttributes, maxHp, maxMp, STAT_IDS } from '../game/attributes'
 import type { AttributeId, StatId } from '../game/attributes';
 import { classOf } from '../game/classes';
 import { aggroed, radiusFor } from '../game/combat';
-import { XP_CURVE } from '../game/constants';
-import { ITEMS } from '../game/items';
+import { INV_H, INV_W, XP_CURVE } from '../game/constants';
+import { ITEMS, itemSize } from '../game/items';
 import { MOBS } from '../game/mobs';
-import type { Fx, GameState } from '../game/types';
+import type { EquipSlot, Fx, GameState, ItemStack, Player } from '../game/types';
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 
-const INV_SLOTS = 30;
 const ATTR_IDS: AttributeId[] = ['health', 'energy', 'defense', 'physicalDamage', 'magicDamage', 'movementSpeed', 'dodge', 'attackSpeed'];
+
+// Faded placeholder glyph + label shown in an empty paperdoll slot.
+const SLOT_GLYPH: Record<EquipSlot, string> =
+  { weapon: '🗡️', armor: '🛡️', helmet: '⛑️', boots: '🥾', necklace: '📿', ring: '💍' };
+const SLOT_LABEL: Record<EquipSlot, string> =
+  { weapon: 'Weapon', armor: 'Armor', helmet: 'Helmet', boots: 'Boots', necklace: 'Necklace', ring: 'Ring' };
 
 export class Hud {
   private els = {
@@ -27,6 +32,8 @@ export class Hud {
     streak: $('streak'), radius: $('radius'), ultHint: $('ult-hint'),
     bossbar: $('bossbar'), bossName: $('boss-name'), bossFill: $('boss-fill'), bossBanner: $('boss-banner'),
     toasts: $('toasts'), inventory: $('inventory'), invGrid: $('inv-grid'),
+    invClose: $('inv-close-btn'), invGoldVal: $('inv-gold-val'), invOverflow: $('inv-overflow'),
+    equipSlots: Array.from(document.querySelectorAll<HTMLElement>('.eq-slot')),
     statspanel: $('statspanel'), statsHeader: $('stats-header'),
     statsOpenBtn: $('stats-open-btn'), statsCloseBtn: $('stats-close-btn'),
     statPointsLeft: $('stat-points-left'),
@@ -41,6 +48,8 @@ export class Hud {
   private lastFlash = 0;
   private cache: Record<string, string | number | boolean> = {};
   onAllocateStat: (stat: StatId) => void = () => {};
+  onEquip: (index: number) => void = () => {};
+  onUnequip: (slot: EquipSlot) => void = () => {};
 
   constructor() {
     this.els.statsBtn.addEventListener('click', () => this.statsOpen ? this.closeStats() : this.openStats());
@@ -48,6 +57,12 @@ export class Hud {
     this.els.statsCloseBtn.addEventListener('click', () => this.closeStats());
     for (const btn of this.els.statPlusBtns) {
       btn.addEventListener('click', () => this.onAllocateStat(btn.dataset.stat as StatId));
+    }
+    this.els.invClose.addEventListener('click', () => this.closeInventory());
+    for (const el of this.els.equipSlots) { // double-click a worn item to send it back to the bag
+      el.addEventListener('dblclick', () => {
+        if (el.classList.contains('filled')) this.onUnequip(el.dataset.slot as EquipSlot);
+      });
     }
     this.initDrag();
   }
@@ -167,6 +182,13 @@ export class Hud {
 
     this.set('dead', p.dead, () => e.death.classList.toggle('hidden', !p.dead));
 
+    this.set('gold', p.gold, () => { e.invGoldVal.textContent = String(p.gold); });
+    this.set('overflow', p.overflow.length, () => {
+      const n = p.overflow.length;
+      e.invOverflow.classList.toggle('hidden', n === 0);
+      e.invOverflow.textContent = n ? `${n} item${n > 1 ? 's' : ''} didn't fit` : '';
+    });
+
     if (this.invOpen && p.invRev !== this.lastInvRev) this.rebuildInventory(state);
 
     for (const f of fx) {
@@ -217,22 +239,62 @@ export class Hud {
 
   private rebuildInventory(state: GameState): void {
     this.lastInvRev = state.player.invRev;
+    this.renderGrid(state.player);
+    this.renderEquipment(state.player);
+  }
+
+  /** Redraw the positioned grid: a backdrop of empty cells, then each item drawn
+   *  across its w×h footprint. Double-clicking an item equips it (A2). */
+  private renderGrid(p: Player): void {
     const grid = this.els.invGrid;
     grid.innerHTML = '';
-    const inv = state.player.inventory;
-    for (let i = 0; i < INV_SLOTS; i++) {
-      const slot = document.createElement('div');
-      slot.className = 'slot';
-      const st = inv[i];
+    for (let i = 0; i < INV_W * INV_H; i++) {
+      const cell = document.createElement('div');
+      cell.className = 'inv-cell';
+      grid.appendChild(cell);
+    }
+    p.inventory.forEach((st, index) => {
+      const tile = this.itemTile(st);
+      const s = itemSize(ITEMS[st.defId]);
+      tile.style.gridColumn = `${st.x + 1} / span ${s.w}`;
+      tile.style.gridRow = `${st.y + 1} / span ${s.h}`;
+      tile.addEventListener('dblclick', () => this.onEquip(index));
+      grid.appendChild(tile);
+    });
+  }
+
+  /** Fill each paperdoll slot with its worn item, or a faded placeholder glyph. */
+  private renderEquipment(p: Player): void {
+    for (const el of this.els.equipSlots) {
+      const slot = el.dataset.slot as EquipSlot;
+      const st = p.equipment[slot];
       if (st) {
         const def = ITEMS[st.defId];
-        slot.classList.add(`t${def.tier}`);
-        slot.title = def.name + (def.weapon ? ` (+${def.weapon.dmgPerChar} dmg/key)` : '');
-        slot.innerHTML = `<span class="icon">${def.icon}</span><span>${def.name.split(' ')[0]}</span>` +
-          (st.qty > 1 ? `<span class="qty">${st.qty}</span>` : '');
+        el.className = `eq-slot filled t${def?.tier ?? 1}`;
+        el.title = `${def?.name ?? SLOT_LABEL[slot]}${st.plus ? ` +${st.plus}` : ''}\ndouble-click to unequip`;
+        el.innerHTML = `<span class="item-icon">${def?.icon ?? '❔'}</span>` +
+          (st.plus && st.plus > 0 ? `<span class="plus">+${st.plus}</span>` : '');
+      } else {
+        el.className = 'eq-slot';
+        el.title = SLOT_LABEL[slot];
+        el.innerHTML = `<span class="eq-ph">${SLOT_GLYPH[slot]}</span>`;
       }
-      grid.appendChild(slot);
     }
+  }
+
+  /** A single grid item tile: tier-colored, emoji icon, quantity + upgrade badges. */
+  private itemTile(st: ItemStack): HTMLElement {
+    const def = ITEMS[st.defId];
+    const tile = document.createElement('div');
+    tile.className = `item t${def?.tier ?? 1}`;
+    const hasPlus = !!st.plus && st.plus > 0;
+    const wpn = def?.weapon ? ` — +${def.weapon.dmgPerChar} dmg/key` : '';
+    tile.title = `${def?.name ?? st.defId}${hasPlus ? ` +${st.plus}` : ''}${wpn}` +
+      (def?.slot ? '\ndouble-click to equip' : '');
+    tile.innerHTML = `<span class="item-icon">${def?.icon ?? '❔'}</span>` +
+      (st.qty > 1 ? `<span class="qty">${st.qty}</span>` : '') +
+      (hasPlus ? `<span class="plus">+${st.plus}</span>` : '');
+    return tile;
   }
 
   private toast(text: string): void {

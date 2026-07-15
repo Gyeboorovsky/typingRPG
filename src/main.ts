@@ -45,6 +45,8 @@ async function boot(): Promise<void> {
   input.onToggleInventory = () => { if (!blocked) hud.toggleInventory(state); };
   input.onCloseInventory = () => { hud.closeInventory(); hud.closeStats(); charSelect.close(); };
   hud.onAllocateStat = (stat) => input.push({ type: 'allocateStat', stat });
+  hud.onEquip = (index) => input.push({ type: 'equip', index });
+  hud.onUnequip = (slot) => input.push({ type: 'unequip', slot });
   saver.onStatus = (clean) => hud.setSaveStatus(clean);
 
   async function refreshCharSelect(): Promise<void> {
