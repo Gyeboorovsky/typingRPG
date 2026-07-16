@@ -3,7 +3,9 @@
 import { emptyStats, maxHp, maxMp, moveSpeed } from './attributes';
 import type { StatId } from './attributes';
 import { classOf } from './classes';
-import { DROP_DESPAWN_SECONDS, GOLD_PER_COIN, PICKUP_RADIUS, PLAYER_RADIUS } from './constants';
+import {
+  DROP_DESPAWN_SECONDS, DROP_REARM_MARGIN, GOLD_PER_COIN, PICKUP_RADIUS, PLAYER_RADIUS,
+} from './constants';
 import { resolveKeystroke, syncCombat, tryUltimate } from './combat';
 import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize, rectFree } from './items';
 import { circleBlocked, isBlocked, SPAWN } from './map';
@@ -42,6 +44,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
     else if (e.type === 'unequip') unequipItem(state, e.slot);
     else if (e.type === 'moveItem') moveItem(state, e.index, e.x, e.y);
     else if (e.type === 'useItem') useItem(state, e.index);
+    else if (e.type === 'dropItem') dropItem(state, e.index);
   }
   const p = state.player;
   if (p.ultCooldown > 0) p.ultCooldown = Math.max(0, p.ultCooldown - dt);
@@ -82,7 +85,10 @@ function stepDrops(state: GameState, dt: number): void {
     const prevAge = d.age;
     d.age += dt;
     if (d.age > DROP_DESPAWN_SECONDS) { state.drops.splice(i, 1); continue; }
-    if (p.dead || dist(d.pos, pp) > PICKUP_RADIUS) continue;
+    const dd = dist(d.pos, pp);
+    // a player-thrown drop re-arms only once the player has stepped away from it
+    if (d.rearm && dd > PICKUP_RADIUS + DROP_REARM_MARGIN) d.rearm = false;
+    if (p.dead || d.rearm || dd > PICKUP_RADIUS) continue;
 
     if (d.defId === 'copper_coin') { // coins convert to gold, never enter the bag
       p.gold += d.qty * GOLD_PER_COIN;
@@ -201,6 +207,21 @@ function useItem(state: GameState, index: number): void {
   state.dirty = true;
   const gain = [heal ? `+${heal} HP` : '', mana ? `+${mana} MP` : ''].filter(Boolean).join(' ');
   state.fx.push({ kind: 'pickup', text: `${def.name} ${gain}`.trim() });
+}
+
+/** Throw inventory[index] on the ground at the player's feet. The drop starts
+ *  re-armed (see stepDrops) so auto-pickup doesn't vacuum it straight back up. */
+function dropItem(state: GameState, index: number): void {
+  const p = state.player;
+  const st = p.inventory[index];
+  if (!st) return;
+  p.inventory.splice(index, 1);
+  state.drops.push({
+    id: state.nextId++, defId: st.defId, qty: st.qty,
+    pos: { ...playerWorldPos(p) }, age: 0, rearm: true,
+  });
+  p.invRev++;
+  state.dirty = true;
 }
 
 function respawnPlayer(state: GameState): void {

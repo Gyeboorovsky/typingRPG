@@ -46,8 +46,13 @@ export const PICKUP_RADIUS = 0.75;
 
 // inventory / currency
 export const INV_W = 10;                 // grid columns
-export const INV_H = 6;                  // grid rows — 60 cells > old flat ≤30, so v1 bags always fit
+export const INV_PAGE_H = 6;             // visible rows per bag page
+export const INV_PAGES = 3;              // Metin2-style bag pages (I/II/III)
+// Total logical rows. Items never span a page boundary (items.ts enforces it).
+// 180 cells > old flat ≤30, so v1 bags always fit on migration.
+export const INV_H = INV_PAGE_H * INV_PAGES;
 export const GOLD_PER_COIN = 1;          // copper_coin → gold conversion rate (provisional)
+export const DROP_REARM_MARGIN = 0.25;   // player-thrown drops re-arm for pickup this far beyond PICKUP_RADIUS
 
 // combat rebuild — provisional stubs, tuned in A2/C1/C2 (life-leech & attack speed)
 export const LEECH_CAP = 0.10;           // max fraction of dealt damage returned as HP (C1)

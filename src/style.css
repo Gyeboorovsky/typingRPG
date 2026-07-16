@@ -330,6 +330,7 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
   max-width: min(94vw, 780px); max-height: 90vh; overflow: auto;
   pointer-events: auto;
+  user-select: none; -webkit-user-select: none; /* double-click acts, never selects */
   background: var(--panel);
   border: 1px solid var(--border-lt);
   border-radius: 18px;
@@ -398,6 +399,17 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
 .item:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.5), var(--sh-sunk); z-index: 2; }
 .eq-slot.filled { cursor: grab; }
 .eq-slot.filled:hover { border-color: var(--acc-lt); }
+
+/* bag pages (I / II / III) ---------------------------------- */
+#inv-pages { display: flex; gap: 6px; justify-content: flex-end; margin-top: 10px; }
+.inv-page-btn {
+  cursor: pointer; min-width: 44px; height: 26px; border-radius: var(--r-sm);
+  border: 1px solid var(--border-lt); background: var(--bg-sunk);
+  color: var(--dim); font-family: inherit; font-weight: 900; font-size: 13px; line-height: 1;
+  transition: color 0.12s, border-color 0.12s;
+}
+.inv-page-btn:hover { color: var(--text); border-color: var(--acc); }
+.inv-page-btn.active { color: var(--text); border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
 
 /* drag & drop ----------------------------------------------- */
 .item.dragging-src, .eq-slot.dragging-src { opacity: 0.28; }
@@ -470,6 +482,7 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   border: 1px solid var(--border-lt);
   border-radius: var(--r-lg);
   pointer-events: auto; overflow: hidden;
+  user-select: none; -webkit-user-select: none; /* rapid +stat clicks must not select */
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 #stats-header {

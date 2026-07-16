@@ -5,7 +5,7 @@ import { maxHp, maxMp, playerAttributes, STAT_IDS } from '../game/attributes';
 import type { AttributeId, StatId } from '../game/attributes';
 import { classOf } from '../game/classes';
 import { radiusFor } from '../game/combat';
-import { INV_H, INV_W, XP_CURVE } from '../game/constants';
+import { INV_PAGE_H, INV_W, XP_CURVE } from '../game/constants';
 import { firstFreeCell, ITEMS, itemSize, rectFree } from '../game/items';
 import { MOBS } from '../game/mobs';
 import type { EquipSlot, Fx, GameState, ItemStack, Player } from '../game/types';
@@ -60,6 +60,7 @@ export class Hud {
     bossbar: $('bossbar'), bossName: $('boss-name'), bossFill: $('boss-fill'), bossBanner: $('boss-banner'),
     toasts: $('toasts'), inventory: $('inventory'), invGrid: $('inv-grid'),
     invClose: $('inv-close-btn'), invGoldVal: $('inv-gold-val'), invOverflow: $('inv-overflow'),
+    invPageBtns: Array.from(document.querySelectorAll<HTMLButtonElement>('.inv-page-btn')),
     equipSlots: Array.from(document.querySelectorAll<HTMLElement>('.eq-slot')),
     statspanel: $('statspanel'), statsHeader: $('stats-header'),
     statsOpenBtn: $('stats-open-btn'), statsCloseBtn: $('stats-close-btn'),
@@ -70,6 +71,7 @@ export class Hud {
     death: $('death'), saveDot: $('save-dot'),
   };
   private invOpen = false;
+  private invPage = 0; // visible bag page (0-based; tabs I/II/III)
   private statsOpen = false;
   private lastInvRev = -1;
   private lastFlash = 0;
@@ -89,6 +91,7 @@ export class Hud {
   onUnequip: (slot: EquipSlot) => void = () => {};
   onMoveItem: (index: number, x: number, y: number) => void = () => {};
   onUseItem: (index: number) => void = () => {};
+  onDropItem: (index: number) => void = () => {};
 
   constructor() {
     this.els.statsBtn.addEventListener('click', () => this.statsOpen ? this.closeStats() : this.openStats());
@@ -98,6 +101,9 @@ export class Hud {
       btn.addEventListener('click', () => this.onAllocateStat(btn.dataset.stat as StatId));
     }
     this.els.invClose.addEventListener('click', () => this.closeInventory());
+    for (const btn of this.els.invPageBtns) {
+      btn.addEventListener('click', () => this.setInvPage(Number(btn.dataset.page)));
+    }
 
     // Floating tooltip + grid drop-outline, created once and reused.
     this.tip = document.createElement('div');
@@ -306,22 +312,36 @@ export class Hud {
     this.renderEquipment(state.player);
   }
 
-  /** Redraw the positioned grid: a backdrop of empty cells, then each item drawn
-   *  across its w×h footprint. Items are draggable (reposition / equip), double- or
-   *  right-clickable (quick-equip / use), and show a hover tooltip. */
+  /** Switch the visible bag page (tabs I/II/III). Locked during a drag so the
+   *  drop-outline math stays on the page the drag started on. */
+  private setInvPage(page: number): void {
+    if (this.drag || page === this.invPage) return;
+    this.invPage = page;
+    if (this.state) this.rebuildInventory(this.state);
+  }
+
+  /** Redraw the positioned grid: a backdrop of empty cells, then each item on the
+   *  current page drawn across its w×h footprint. Items are draggable (reposition /
+   *  equip), double- or right-clickable (quick-equip / use), and show a hover tooltip. */
   private renderGrid(p: Player): void {
     const grid = this.els.invGrid;
     grid.innerHTML = '';
-    for (let i = 0; i < INV_W * INV_H; i++) {
+    for (let i = 0; i < INV_W * INV_PAGE_H; i++) {
       const cell = document.createElement('div');
       cell.className = 'inv-cell';
+      // Explicit placement — auto-placed cells would flow AROUND the explicitly
+      // placed item tiles and spill into phantom rows below the grid.
+      cell.style.gridColumn = String((i % INV_W) + 1);
+      cell.style.gridRow = String(Math.floor(i / INV_W) + 1);
       grid.appendChild(cell);
     }
+    const rowOff = this.invPage * INV_PAGE_H;
     p.inventory.forEach((st, index) => {
+      if (Math.floor(st.y / INV_PAGE_H) !== this.invPage) return; // other page
       const tile = this.itemTile(st);
       const s = itemSize(ITEMS[st.defId]);
       tile.style.gridColumn = `${st.x + 1} / span ${s.w}`;
-      tile.style.gridRow = `${st.y + 1} / span ${s.h}`;
+      tile.style.gridRow = `${st.y - rowOff + 1} / span ${s.h}`;
       tile.addEventListener('dblclick', () => this.tryEquip(index, st, tile));
       tile.addEventListener('contextmenu', (e) => { e.preventDefault(); this.quickAction(tile, index, st); });
       tile.addEventListener('pointerdown', (e) => this.beginDrag(e, tile, { kind: 'grid', index, st }));
@@ -329,6 +349,8 @@ export class Hud {
       tile.addEventListener('pointerleave', () => this.hideTooltip());
       grid.appendChild(tile);
     });
+    for (const btn of this.els.invPageBtns)
+      btn.classList.toggle('active', Number(btn.dataset.page) === this.invPage);
     grid.appendChild(this.outline); // re-attach after innerHTML wipe; stays hidden until a drag
   }
 
@@ -424,12 +446,19 @@ export class Hud {
     if (d.source.kind === 'grid') {
       if (target.type === 'equip') this.tryEquipTo(d.source.index, d.source.st, target.slot);
       else if (target.type === 'grid') this.tryMove(d.source, target.x, target.y, d.w, d.h, d.el);
-      else this.shakeEl(d.el); // dropped nowhere useful
+      else if (this.outsideInventory(e.clientX, e.clientY)) this.onDropItem(d.source.index); // throw to the ground
+      else this.shakeEl(d.el); // dropped on the window but nowhere useful
     } else {
       if (target.type === 'grid') this.tryUnequip(d.source.slot);
       else this.shakeEl(d.el); // can't move a worn item straight to another slot
     }
   };
+
+  /** True when the pointer is off the inventory window entirely (→ drop to ground). */
+  private outsideInventory(px: number, py: number): boolean {
+    const r = this.els.inventory.getBoundingClientRect();
+    return px < r.left || px > r.right || py < r.top || py > r.bottom;
+  }
 
   private startGhost(d: DragState): void {
     const cell = d.cell, gap = d.gap;
@@ -458,8 +487,8 @@ export class Hud {
       const r = d.gridRect ?? this.els.invGrid.getBoundingClientRect();
       const pitch = d.cell + d.gap;
       const gx = Math.max(0, Math.min(INV_W - d.w, Math.round((px - d.grabDX - r.left) / pitch)));
-      const gy = Math.max(0, Math.min(INV_H - d.h, Math.round((py - d.grabDY - r.top) / pitch)));
-      return { type: 'grid', x: gx, y: gy };
+      const gy = Math.max(0, Math.min(INV_PAGE_H - d.h, Math.round((py - d.grabDY - r.top) / pitch)));
+      return { type: 'grid', x: gx, y: gy + this.invPage * INV_PAGE_H }; // absolute bag coords
     }
     return { type: 'none' };
   }
@@ -481,7 +510,7 @@ export class Hud {
       const ok = src.kind === 'grid'
         ? rectFree(p.inventory.filter((_, i) => i !== src.index), t.x, t.y, d.w, d.h)
         : !!firstFreeCell(p.inventory, d.w, d.h);
-      this.showOutline(t.x, t.y, d.w, d.h, ok);
+      this.showOutline(t.x, t.y - this.invPage * INV_PAGE_H, d.w, d.h, ok); // outline is page-local
     }
   }
 

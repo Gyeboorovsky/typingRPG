@@ -9,10 +9,11 @@ import {
   damageMob, grantXp, meleeMitigatedDamage, radiusFor, resolveKeystroke, syncCombat, typingDamage,
 } from './combat';
 import {
-  BOSS_ENRAGE_TYPO_MULT, GOLD_PER_COIN, INV_H, INV_W, MOVE_PER_POINT,
-  PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX, SIM_DT, XP_CURVE,
+  BOSS_ENRAGE_TYPO_MULT, DROP_REARM_MARGIN, GOLD_PER_COIN, INV_H, INV_PAGE_H, INV_W,
+  MOVE_PER_POINT, PICKUP_RADIUS, PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX,
+  SIM_DT, XP_CURVE,
 } from './constants';
-import { addToInventory, firstFreeCell, ITEMS } from './items';
+import { addToInventory, firstFreeCell, ITEMS, rectFree } from './items';
 import { rollDrops } from './loot';
 import { isBlocked } from './map';
 import { MOBS } from './mobs';
@@ -275,13 +276,27 @@ describe('inventory grid', () => {
 
   it('addToInventory fills the grid then leaves the rest un-taken (no overflow)', () => {
     const s = newGame(1);
-    // iron_sword is 1x2 (2 cells); the 10x6 grid holds exactly 30 of them.
-    for (let i = 0; i < 30; i++) expect(addToInventory(s.player, 'iron_sword', 1)).toBe(1);
-    expect(s.player.inventory).toHaveLength(30);
+    // iron_sword is 1x2 (2 cells); each 10x6 page holds 30, so all pages hold
+    // exactly INV_W*INV_H/2 (the 6-row pages divide evenly by the sword's height).
+    const cap = (INV_W * INV_H) / 2;
+    for (let i = 0; i < cap; i++) expect(addToInventory(s.player, 'iron_sword', 1)).toBe(1);
+    expect(s.player.inventory).toHaveLength(cap);
     expect(s.player.overflow).toHaveLength(0);
-    expect(addToInventory(s.player, 'iron_sword', 1)).toBe(0); // 31st — no room, taken = 0
-    expect(s.player.inventory).toHaveLength(30);
+    expect(addToInventory(s.player, 'iron_sword', 1)).toBe(0); // cap+1 — no room, taken = 0
+    expect(s.player.inventory).toHaveLength(cap);
     expect(s.player.overflow).toHaveLength(0); // overflow is no longer written by pickups
+  });
+
+  it('placement never spans a page boundary', () => {
+    // Fill page 1 rows 0..4 solid, leaving only row 5 open on that page: a 1x2
+    // item must NOT start at y=5 (it would tear across the page-1/page-2 seam)
+    // and lands at the top of page 2 instead.
+    const placed: { defId: string; x: number; y: number }[] = [];
+    for (let y = 0; y < INV_PAGE_H - 1; y++)
+      for (let x = 0; x < INV_W; x++) placed.push({ defId: 'slime_gel', x, y });
+    expect(firstFreeCell(placed, 1, 2)).toEqual({ x: 0, y: INV_PAGE_H });
+    expect(rectFree(placed, 0, INV_PAGE_H - 1, 1, 2)).toBe(false); // crosses the seam
+    expect(rectFree(placed, 0, INV_PAGE_H, 1, 2)).toBe(true);      // clean on page 2
   });
 
   it('addToInventory stacks stackables into a single 1x1 cell', () => {
@@ -446,6 +461,37 @@ describe('currency & bag-full pickups', () => {
     expect(s.drops).toHaveLength(1);
     expect(s.player.inventory).toHaveLength(INV_W * INV_H);
     expect(s.fx.some((f) => f.kind === 'pickup' && f.text === 'Bag full')).toBe(true);
+  });
+});
+
+describe('dropItem (throw out of the bag)', () => {
+  it('moves the stack to a ground drop at the player, re-armed against auto-pickup', () => {
+    const s = newGame(1); s.mobs = [];
+    s.player.inventory = [{ defId: 'slime_gel', qty: 7, x: 0, y: 0 }];
+    update(s, [{ type: 'dropItem', index: 0 }], SIM_DT);
+    expect(s.player.inventory).toHaveLength(0);
+    expect(s.drops).toHaveLength(1);
+    expect(s.drops[0]).toMatchObject({ defId: 'slime_gel', qty: 7, rearm: true });
+    expect(s.drops[0].pos).toEqual(s.player.pos);
+    // standing on it must NOT pick it back up, no matter how long
+    for (let i = 0; i < 120; i++) update(s, [], SIM_DT);
+    expect(s.drops).toHaveLength(1);
+    expect(s.player.inventory).toHaveLength(0);
+    // step out of the pickup radius once → the drop re-arms…
+    s.player.pos = { x: s.drops[0].pos.x + PICKUP_RADIUS + DROP_REARM_MARGIN + 0.1, y: s.drops[0].pos.y };
+    update(s, [], SIM_DT);
+    expect(s.drops[0].rearm).toBe(false);
+    // …and walking back picks it up again
+    s.player.pos = { ...s.drops[0].pos };
+    update(s, [], SIM_DT);
+    expect(s.drops).toHaveLength(0);
+    expect(s.player.inventory[0]).toMatchObject({ defId: 'slime_gel', qty: 7 });
+  });
+
+  it('is a silent no-op on an invalid index', () => {
+    const s = newGame(1); s.mobs = [];
+    update(s, [{ type: 'dropItem', index: 3 }], SIM_DT);
+    expect(s.drops).toHaveLength(0);
   });
 });
 

@@ -1,6 +1,6 @@
 // Item catalog. `upgradable`/`upgradeMats`/`recipe` are data seams for the
 // future Metin2-style +0..+9 upgrading and crafting UIs (ItemStack.plus too).
-import { INV_H, INV_W } from './constants';
+import { INV_H, INV_PAGE_H, INV_W } from './constants';
 import { EQUIP_SLOTS } from './types';
 import type { EquipSlot, ItemDef, ItemStack, Player } from './types';
 
@@ -194,6 +194,12 @@ export const itemSize = (def: ItemDef | undefined): { w: number; h: number } =>
 // safe even for a future server tick handling many players sequentially.
 const occ = new Uint8Array(INV_W * INV_H);
 
+/** Bag pages are independent grids: a footprint starting at row y with height h
+ *  must sit entirely within one INV_PAGE_H-row page (the UI shows one page at
+ *  a time, so a page-spanning item would render torn in half). */
+const withinOnePage = (y: number, h: number): boolean =>
+  Math.floor(y / INV_PAGE_H) === Math.floor((y + h - 1) / INV_PAGE_H);
+
 /** First row-major top-left cell where a w×h footprint fits among already-placed
  *  items, or null if the INV_W×INV_H grid has no room. Occupancy is rebuilt from
  *  each placed item's own size, so multi-cell items block the cells they span. */
@@ -209,13 +215,15 @@ export function firstFreeCell(
         if (gy >= 0 && gy < INV_H && gx >= 0 && gx < INV_W) occ[gy * INV_W + gx] = 1;
       }
   }
-  for (let y = 0; y + h <= INV_H; y++)
+  for (let y = 0; y + h <= INV_H; y++) {
+    if (!withinOnePage(y, h)) continue;
     for (let x = 0; x + w <= INV_W; x++) {
       let free = true;
       for (let dy = 0; dy < h && free; dy++)
         for (let dx = 0; dx < w; dx++) if (occ[(y + dy) * INV_W + x + dx]) { free = false; break; }
       if (free) return { x, y };
     }
+  }
   return null;
 }
 
@@ -260,12 +268,14 @@ export function addToInventory(p: Player, defId: string, qty: number): number {
   return taken;
 }
 
-/** True if a w×h footprint at (x,y) is in-bounds and clear of every already-placed
- *  item's footprint. Pass the other items only (exclude the one being moved). */
+/** True if a w×h footprint at (x,y) is in-bounds, inside a single bag page, and
+ *  clear of every already-placed item's footprint. Pass the other items only
+ *  (exclude the one being moved). */
 export function rectFree(
   placed: { defId: string; x: number; y: number }[], x: number, y: number, w: number, h: number,
 ): boolean {
   if (x < 0 || y < 0 || x + w > INV_W || y + h > INV_H) return false;
+  if (!withinOnePage(y, h)) return false;
   for (const it of placed) {
     const s = itemSize(ITEMS[it.defId]);
     if (x < it.x + s.w && x + w > it.x && y < it.y + s.h && y + h > it.y) return false;

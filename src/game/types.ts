@@ -122,9 +122,13 @@ export type InputEvent =
   | { type: 'equip'; index: number }         // inventory[index] → its slot
   | { type: 'unequip'; slot: EquipSlot }     // slot → first free grid cell
   | { type: 'moveItem'; index: number; x: number; y: number } // grid reposition
-  | { type: 'useItem'; index: number };      // consume inventory[index] (travel only)
+  | { type: 'useItem'; index: number }       // consume inventory[index] (travel only)
+  | { type: 'dropItem'; index: number };     // throw inventory[index] on the ground
 
-export interface GroundDrop { id: number; defId: string; qty: number; pos: Vec2; age: number }
+// `rearm`: set on player-thrown drops — auto-pickup stays off until the player
+// leaves the pickup radius once, so the item isn't vacuumed straight back up.
+// (Upgrade level `plus` is not carried by ground drops yet — revisit with +0..+9.)
+export interface GroundDrop { id: number; defId: string; qty: number; pos: Vec2; age: number; rearm?: boolean }
 
 export interface GameState {
   tick: number;
