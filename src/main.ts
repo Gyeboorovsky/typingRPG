@@ -121,8 +121,10 @@ async function boot(): Promise<void> {
       acc -= STEP_MS;
     }
     if (steps === 5) acc = 0; // spiral-of-death guard
-    // A hero killed mid-fight must not stay in fight mode, or they can't move after respawn.
-    if (!blocked && state.player.dead) input.forceTravel();
+    // Keep Input's optimistic mode aligned with the sim after each tick: death and auto-exit
+    // (last aggroed mob gone) both drop the sim to travel. forceTravel no-ops when already
+    // aligned, so calling it every travel frame costs nothing.
+    if (!blocked && state.mode === 'travel') input.forceTravel();
     const fx = state.fx;
     state.fx = [];
     if (!blocked) {

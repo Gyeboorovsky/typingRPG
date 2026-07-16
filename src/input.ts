@@ -132,11 +132,13 @@ export class Input {
     else if (route.ui === 'closeWindows') this.onCloseWindows();
   }
 
-  /** Force the input layer back to travel (used on death / character load). Idempotent. */
+  /** Force the input layer back to travel (death / character load / sim auto-exit).
+   *  Idempotent; also drops any held movement so a stale WSAD press can't linger. */
   forceTravel(): void {
     if (this.mode === 'travel') return;
     this.mode = 'travel';
     this.queue.push({ type: 'setMode', mode: 'travel' });
+    if (this.held.length) { this.held = []; this.pushMove(); }
   }
 
   private release(dir: Dir): void {

@@ -41,7 +41,7 @@ export function syncCombat(state: GameState): void {
   let tier = 0;
   for (const m of state.mobs)
     if (m.state === 'aggro' && MOBS[m.defId].tier > tier) tier = MOBS[m.defId].tier;
-  if (tier === 0) { state.combat = null; return; }
+  if (tier === 0) { state.mode = 'travel'; state.combat = null; return; } // last target gone → leave fight
   if (!state.combat) {
     state.combat = { prompt: promptFor(state, tier as Tier), typed: 0, streak: 0, tier: tier as Tier, errorFlash: 0 };
   } else if (tier > state.combat.tier) { // a harder mob joined — harder words

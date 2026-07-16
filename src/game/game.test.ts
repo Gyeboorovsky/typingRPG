@@ -674,11 +674,57 @@ describe('control modes (travel / fight)', () => {
   });
 
   it('movement is gated to travel — held keys do not move in fight', () => {
-    const s = newGame(1); s.mobs = [];
-    s.mode = 'fight';
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]); // an aggro mob keeps us in fight
     const start = { ...s.player.pos };
     update(s, [{ type: 'move', dirs: [0] }], SIM_DT);
     for (let i = 0; i < 20; i++) update(s, [], SIM_DT);
     expect(s.player.pos).toEqual(start); // stayed put while typing
+  });
+
+  it('auto-exits fight to travel when the last aggroed mob dies', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR, hp: 1 }]); // 1 HP → one correct char kills it
+    update(s, [{ type: 'char', ch: s.combat!.prompt[0] }], SIM_DT);
+    expect(s.mobs.length).toBe(0);
+    expect(s.mode).toBe('travel');
+    expect(s.combat).toBeNull();
+  });
+
+  it('auto-exits fight to travel when the last aggroed mob leashes out of range', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    const m = s.mobs[0];
+    m.pos = { x: m.home.x + 20, y: m.home.y }; // > LEASH_DIST from home → mobStep leashes it
+    update(s, [], SIM_DT);
+    expect(m.state).not.toBe('aggro'); // leashed, no longer aggroed
+    expect(s.mode).toBe('travel');
+    expect(s.combat).toBeNull();
+  });
+
+  it('stays in fight while another mob is still aggroed', () => {
+    const s = stateWith([
+      { defId: 'slime', pos: NEAR, hp: 1 },        // dies on the first correct char
+      { defId: 'slime', pos: { x: 24, y: 38 } },   // also in radius, full HP → survives
+    ]);
+    update(s, [{ type: 'char', ch: s.combat!.prompt[0] }], SIM_DT);
+    expect(s.mobs.some((m) => m.state === 'aggro')).toBe(true);
+    expect(s.mode).toBe('fight');
+    expect(s.combat).not.toBeNull();
+  });
+
+  it('manual exit with a mob still aggroed keeps aggro and does not auto-anything (B1)', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]); // healthy aggro mob
+    update(s, [{ type: 'setMode', mode: 'travel' }], SIM_DT);
+    expect(s.mode).toBe('travel');
+    expect(s.combat).toBeNull();
+    expect(s.mobs[0].state).toBe('aggro'); // manual exit never drops aggro
+  });
+
+  it('movement resumes after auto-exit without needing a fresh keypress', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR, hp: 1 }]);
+    s.held = [0]; // holding "up" (north — open sand road from spawn) from before the fight
+    const start = { ...s.player.pos };
+    update(s, [{ type: 'char', ch: s.combat!.prompt[0] }], SIM_DT); // kills mob → auto-exit
+    expect(s.mode).toBe('travel');
+    for (let i = 0; i < 10; i++) update(s, [], SIM_DT); // no new input
+    expect(s.player.pos).not.toEqual(start); // moved: held persisted + travel re-enables stepPlayer
   });
 });
