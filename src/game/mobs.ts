@@ -138,14 +138,20 @@ function moveToward(m: Mob, target: Vec2, step: number): void {
   if (!circleBlocked(m.pos.x, ny, MOB_RADIUS)) m.pos.y = ny;
 }
 
-/** Soft pairwise push so packs don't collapse into one point. */
+/** Soft pairwise push so packs don't collapse into one point.
+ *  O(n²) over all mobs — fine at today's ~28 per map (squared-distance early
+ *  exit keeps the constant small). If MMO-scale zones raise mob counts,
+ *  replace the broad phase with a coarse spatial hash (~1-tile buckets
+ *  rebuilt per tick, comparing neighboring buckets only). */
 function separate(mobs: Mob[]): void {
+  const minSq = MOB_SEPARATION * MOB_SEPARATION;
   for (let i = 0; i < mobs.length; i++) {
     for (let j = i + 1; j < mobs.length; j++) {
       const a = mobs[i], b = mobs[j];
       const dx = b.pos.x - a.pos.x, dy = b.pos.y - a.pos.y;
-      const d = Math.hypot(dx, dy);
-      if (d <= 1e-6 || d >= MOB_SEPARATION) continue;
+      const dSq = dx * dx + dy * dy;
+      if (dSq <= 1e-12 || dSq >= minSq) continue; // sqrt only for real overlaps
+      const d = Math.sqrt(dSq);
       const push = (MOB_SEPARATION - d) / 2 / d;
       const ax = a.pos.x - dx * push, ay = a.pos.y - dy * push;
       const bx = b.pos.x + dx * push, by = b.pos.y + dy * push;
