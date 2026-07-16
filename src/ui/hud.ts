@@ -4,7 +4,7 @@
 import { maxHp, maxMp, playerAttributes, STAT_IDS } from '../game/attributes';
 import type { AttributeId, StatId } from '../game/attributes';
 import { classOf } from '../game/classes';
-import { aggroed, radiusFor } from '../game/combat';
+import { radiusFor } from '../game/combat';
 import { INV_H, INV_W, XP_CURVE } from '../game/constants';
 import { firstFreeCell, ITEMS, itemSize, rectFree } from '../game/items';
 import { MOBS } from '../game/mobs';
@@ -218,8 +218,8 @@ export class Hud {
       });
     }
 
-    // boss bar while a boss is engaged
-    const boss = aggroed(state).find((m) => MOBS[m.defId].boss);
+    // boss bar while a boss is engaged (no array alloc — this runs every frame)
+    const boss = state.mobs.find((m) => m.state === 'aggro' && MOBS[m.defId].boss);
     this.set('boss', boss ? `${boss.hp}:${boss.shield}` : '', () => {
       e.bossbar.classList.toggle('hidden', !boss);
       if (boss) {

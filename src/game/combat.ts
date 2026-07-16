@@ -32,17 +32,19 @@ export function meleeMitigatedDamage(state: GameState, raw: number): number {
 export const radiusFor = (streak: number): number =>
   Math.min(RADIUS_BASE + RADIUS_PER_STREAK * streak, RADIUS_MAX);
 
-export const aggroed = (state: GameState): Mob[] => state.mobs.filter((m) => m.state === 'aggro');
+const aggroed = (state: GameState): Mob[] => state.mobs.filter((m) => m.state === 'aggro');
 
-/** Per-tick combat lifecycle: start when mobs engage, end when none remain. */
+/** Per-tick combat lifecycle: start when mobs engage, end when none remain.
+ *  Single pass over mobs — this runs every tick, so no array is allocated. */
 export function syncCombat(state: GameState): void {
-  const ag = aggroed(state);
-  if (ag.length === 0) { state.combat = null; return; }
-  const tier = ag.reduce<number>((t, m) => Math.max(t, MOBS[m.defId].tier), 1) as Tier;
+  let tier = 0;
+  for (const m of state.mobs)
+    if (m.state === 'aggro' && MOBS[m.defId].tier > tier) tier = MOBS[m.defId].tier;
+  if (tier === 0) { state.combat = null; return; }
   if (!state.combat) {
-    state.combat = { prompt: promptFor(state, tier), typed: 0, streak: 0, tier, errorFlash: 0 };
+    state.combat = { prompt: promptFor(state, tier as Tier), typed: 0, streak: 0, tier: tier as Tier, errorFlash: 0 };
   } else if (tier > state.combat.tier) { // a harder mob joined — harder words
-    state.combat.tier = tier;
+    state.combat.tier = tier as Tier;
     newPrompt(state);
   }
 }
@@ -58,23 +60,27 @@ export function resolveKeystroke(state: GameState, ch: string): void {
   const c = state.combat;
   const p = state.player;
   if (!c || p.dead) return;
+  const ag = aggroed(state); // one scan per keystroke, shared with completion/typo
   if (ch === c.prompt[c.typed]) {
     c.typed++;
     c.streak++;
     const dmg = typingDamage(p);
     const r = radiusFor(c.streak);
     const pp = playerWorldPos(p);
-    for (const m of aggroed(state)) if (dist(m.pos, pp) <= r) damageMob(state, m, dmg);
-    if (state.combat && c.typed >= c.prompt.length) completePrompt(state);
+    for (const m of ag) if (dist(m.pos, pp) <= r) damageMob(state, m, dmg);
+    if (state.combat && c.typed >= c.prompt.length) completePrompt(state, ag);
   } else {
-    typo(state);
+    typo(state, ag);
   }
 }
 
-function completePrompt(state: GameState): void {
+// Both take the keystroke's aggro snapshot: mobs killed by the damage loop have
+// shield=false (shielded mobs are unkillable), so the shield passes see the
+// same set a fresh filter would.
+function completePrompt(state: GameState, ag: Mob[]): void {
   const p = state.player;
   p.mp = Math.min(p.mp + PROMPT_MP_REWARD, maxMp(p));
-  for (const m of aggroed(state)) {
+  for (const m of ag) {
     if (m.shield) { // a full prompt without typos breaks the boss shield
       m.shield = false;
       state.fx.push({ kind: 'shieldbreak', pos: { ...m.pos } });
@@ -83,13 +89,13 @@ function completePrompt(state: GameState): void {
   newPrompt(state);
 }
 
-function typo(state: GameState): void {
+function typo(state: GameState, ag: Mob[]): void {
   const c = state.combat!;
   c.streak = 0;
   c.errorFlash = 0.3;
   let raw = 0;
   let shieldedBoss = false;
-  for (const m of aggroed(state)) {
+  for (const m of ag) {
     const def = MOBS[m.defId];
     let d = def.typoDamage;
     if (def.boss && m.hp <= def.hp * BOSS_ENRAGE_HP) d = Math.round(d * BOSS_ENRAGE_TYPO_MULT);
