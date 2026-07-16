@@ -15,6 +15,10 @@ export const MOBS: Record<string, MobDef> = {
     drops: [
       { itemId: 'slime_gel', chance: 0.6, min: 1, max: 2 },
       { itemId: 'copper_coin', chance: 0.3, min: 1, max: 1 },
+      // tier-1 gear: the bow drops here so ranged combat (C2) is testable from level 1
+      { itemId: 'short_bow', chance: 0.05, min: 1, max: 1 },
+      { itemId: 'leather_cap', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'worn_boots', chance: 0.04, min: 1, max: 1 },
     ],
   },
   boar: {
@@ -24,6 +28,14 @@ export const MOBS: Record<string, MobDef> = {
       { itemId: 'boar_tusk', chance: 0.5, min: 1, max: 1 },
       { itemId: 'leather_scrap', chance: 0.4, min: 1, max: 1 },
       { itemId: 'hp_potion', chance: 0.1, min: 1, max: 1 },
+      // tier-1/2 gear
+      { itemId: 'padded_vest', chance: 0.05, min: 1, max: 1 },
+      { itemId: 'copper_amulet', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'bronze_ring', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'rusty_daggers', chance: 0.05, min: 1, max: 1 },
+      { itemId: 'apprentice_wand', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'swift_greaves', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'band_of_vigor', chance: 0.04, min: 1, max: 1 },
     ],
   },
   cultist: {
@@ -32,7 +44,22 @@ export const MOBS: Record<string, MobDef> = {
     drops: [
       { itemId: 'dark_shard', chance: 0.45, min: 1, max: 1 },
       { itemId: 'rune_cloth', chance: 0.35, min: 1, max: 1 },
+      // tier-3 gear
       { itemId: 'iron_sword', chance: 0.05, min: 1, max: 1 },
+      { itemId: 'oak_staff', chance: 0.05, min: 1, max: 1 },
+      { itemId: 'hunter_longbow', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'iron_mail', chance: 0.05, min: 1, max: 1 },
+      { itemId: 'iron_helm', chance: 0.05, min: 1, max: 1 },
+      { itemId: 'warded_pendant', chance: 0.04, min: 1, max: 1 },
+      // tier-4 gear: rare drops off the toughest farmable mob (boss keeps the rest)
+      { itemId: 'war_greatsword', chance: 0.02, min: 1, max: 1 },
+      { itemId: 'shadow_daggers', chance: 0.02, min: 1, max: 1 },
+      { itemId: 'forbidden_grimoire', chance: 0.02, min: 1, max: 1 },
+      { itemId: 'dragon_plate', chance: 0.02, min: 1, max: 1 },
+      { itemId: 'rune_hood', chance: 0.02, min: 1, max: 1 },
+      { itemId: 'boots_of_haste', chance: 0.02, min: 1, max: 1 },
+      { itemId: 'typhon_charm', chance: 0.02, min: 1, max: 1 },
+      { itemId: 'ring_of_the_viper', chance: 0.02, min: 1, max: 1 },
     ],
   },
   typhon: {

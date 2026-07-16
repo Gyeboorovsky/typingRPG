@@ -12,10 +12,11 @@ import {
   BOSS_ENRAGE_TYPO_MULT, GOLD_PER_COIN, INV_H, INV_W, MOVE_PER_POINT,
   PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX, SIM_DT, XP_CURVE,
 } from './constants';
-import { addToInventory, firstFreeCell } from './items';
+import { addToInventory, firstFreeCell, ITEMS } from './items';
 import { rollDrops } from './loot';
 import { isBlocked } from './map';
 import { MOBS } from './mobs';
+import { EQUIP_SLOTS } from './types';
 import { rand } from './rng';
 import { applySave, makeSave, newGame, update } from './sim';
 import type { ClassId, GameState, Mob, SaveData, Vec2 } from './types';
@@ -135,6 +136,30 @@ describe('loot and xp', () => {
 
   it('xp curve grows monotonically', () => {
     for (let l = 1; l < 30; l++) expect(XP_CURVE(l + 1)).toBeGreaterThan(XP_CURVE(l));
+  });
+
+  it('every mob drop references a real item', () => {
+    for (const def of Object.values(MOBS))
+      for (const d of def.drops) expect(ITEMS[d.itemId], d.itemId).toBeDefined();
+  });
+});
+
+describe('item catalog invariants', () => {
+  it('every weapon has a weaponType and covers all seven types', () => {
+    const types = new Set<string>();
+    for (const def of Object.values(ITEMS))
+      if (def.kind === 'weapon') { expect(def.weaponType, def.id).toBeDefined(); types.add(def.weaponType!); }
+    expect([...types].sort()).toEqual(
+      ['bow', 'daggers', 'greatsword', 'grimoire', 'staff', 'sword', 'wand'],
+    );
+  });
+
+  it('every equippable (weapon/armor) has a valid slot', () => {
+    for (const def of Object.values(ITEMS)) {
+      if (def.kind !== 'weapon' && def.kind !== 'armor') continue;
+      expect(def.slot, def.id).toBeDefined();
+      expect(EQUIP_SLOTS, def.id).toContain(def.slot!);
+    }
   });
 
   it('level-up carries the xp remainder and fully heals', () => {
