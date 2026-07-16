@@ -1,7 +1,7 @@
 // DOM HUD overlay: bars, typing prompt, boss bar, toasts, inventory, the
 // draggable statistics/attributes window, death screen. Reads state each
 // frame but only touches the DOM when values change.
-import { effectiveAttributes, maxHp, maxMp, STAT_IDS } from '../game/attributes';
+import { maxHp, maxMp, playerAttributes, STAT_IDS } from '../game/attributes';
 import type { AttributeId, StatId } from '../game/attributes';
 import { classOf } from '../game/classes';
 import { aggroed, radiusFor } from '../game/combat';
@@ -279,7 +279,7 @@ export class Hud {
     }
     for (const btn of this.els.statPlusBtns) btn.disabled = p.statPoints <= 0;
 
-    const attrs = effectiveAttributes(p.classId, p.stats, p.equipment);
+    const attrs = playerAttributes(p);
     for (const attr of ATTR_IDS) {
       const v = attrs[attr];
       this.els.attrVals[attr].textContent = attr === 'dodge' ? `${v.toFixed(1)}%` : String(Math.round(v));

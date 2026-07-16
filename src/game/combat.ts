@@ -1,7 +1,7 @@
 // The heart of the game: per-keystroke resolution, streak → AoE radius,
 // ultimates, boss shield/enrage, XP and kills.
 import {
-  effectiveAttributes, maxHp, maxMp, physCharDamage, statPointsEarned, STAT_IDS,
+  maxHp, maxMp, physCharDamage, playerAttributes, statPointsEarned, STAT_IDS,
 } from './attributes';
 import { classOf } from './classes';
 import {
@@ -17,14 +17,14 @@ import { dist, playerWorldPos } from './types';
 
 /** Per-correct-char typing damage for a player, from their effective (gear-aware) attributes. */
 export const typingDamage = (p: Player): number =>
-  physCharDamage(effectiveAttributes(p.classId, p.stats, p.equipment));
+  physCharDamage(playerAttributes(p));
 
 /** Apply defense mitigation and roll dodge against an incoming melee hit (the mob's typo
  *  retaliation today; real mob-melee reuses this later). Consumes state.rng for dodge, so
  *  results are seed-deterministic. Returns 0 when the hit is dodged. */
 export function meleeMitigatedDamage(state: GameState, raw: number): number {
   if (raw <= 0) return 0;
-  const attrs = effectiveAttributes(state.player.classId, state.player.stats, state.player.equipment);
+  const attrs = playerAttributes(state.player);
   if (rand(state) * 100 < attrs.dodge) return 0; // dodged
   return Math.round(raw * DEFENSE_K / (DEFENSE_K + attrs.defense));
 }

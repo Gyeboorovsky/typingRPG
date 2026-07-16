@@ -8,6 +8,7 @@ import {
 } from './constants';
 import { ITEMS } from './items';
 import type { ClassId, EquipSlot, ItemStack, Player } from './types';
+import { EQUIP_SLOTS } from './types';
 
 export type AttributeId =
   | 'health' | 'energy' | 'defense' | 'physicalDamage' | 'magicDamage'
@@ -29,9 +30,17 @@ const CLASS_BASE_EXTRA: Record<ClassId, Omit<Attributes, 'health' | 'energy'>> =
   priest: { defense: 2, physicalDamage: 3, magicDamage: 9, movementSpeed: 4, dodge: 3, attackSpeed: 5 },
 };
 
+/** Per-class base attribute sets, folded once at module load. Read-only —
+ *  callers that need a mutable copy go through baseAttributes(). */
+const BASE_ATTRS: Record<ClassId, Attributes> = Object.fromEntries(
+  (Object.keys(CLASSES) as ClassId[]).map((id) => {
+    const c = CLASSES[id];
+    return [id, { health: c.baseHp, energy: c.baseMp, ...CLASS_BASE_EXTRA[id] }];
+  }),
+) as Record<ClassId, Attributes>;
+
 export function baseAttributes(classId: ClassId): Attributes {
-  const c = CLASSES[classId];
-  return { health: c.baseHp, energy: c.baseMp, ...CLASS_BASE_EXTRA[classId] };
+  return { ...BASE_ATTRS[classId] }; // fresh copy — effectiveAttributes mutates its seed
 }
 
 /** How much one point of a stat adds to each attribute, at a class's default (100%) rate. */
@@ -86,6 +95,57 @@ export function effectiveAttributes(
   return result;
 }
 
+// --- memoized per-Player attributes -------------------------------------
+// effectiveAttributes is on hot paths (regen every tick, HUD bars every frame,
+// damage every keystroke) yet its inputs change only on equip/unequip/
+// allocateStat/class change. Cache the fold per Player object and validate by
+// content fingerprint — no invalidation hooks, so code (or tests, or future
+// server paths) that mutates Player directly can never be served stale values.
+// Keyed on object identity, the WeakMap scales to N players on one server
+// process (one entry per player, GC'd with it) and never touches SaveData.
+interface AttrCache {
+  classId: ClassId;
+  vit: number; int: number; str: number; dex: number;
+  eqId: (string | null)[];         // per-slot defId, EQUIP_SLOTS order
+  eqPlus: (number | undefined)[];  // per-slot upgrade level (+0..+9 seam)
+  attrs: Attributes;
+}
+const attrCache = new WeakMap<Player, AttrCache>();
+
+function cacheValid(c: AttrCache, p: Player): boolean {
+  if (c.classId !== p.classId) return false;
+  const s = p.stats;
+  if (c.vit !== s.VIT || c.int !== s.INT || c.str !== s.STR || c.dex !== s.DEX) return false;
+  for (let i = 0; i < EQUIP_SLOTS.length; i++) {
+    const st = p.equipment[EQUIP_SLOTS[i]];
+    if (c.eqId[i] !== (st ? st.defId : null) || c.eqPlus[i] !== st?.plus) return false;
+  }
+  return true;
+}
+
+/** Memoized effectiveAttributes for a live Player. The returned object is
+ *  shared with the cache — treat it as READ-ONLY. Level is deliberately not
+ *  fingerprinted: it only feeds the maxHp/maxMp level term, outside the fold. */
+export function playerAttributes(p: Player): Attributes {
+  const hit = attrCache.get(p);
+  if (hit && cacheValid(hit, p)) return hit.attrs;
+  const c: AttrCache = hit ?? {
+    classId: p.classId, vit: 0, int: 0, str: 0, dex: 0,
+    eqId: EQUIP_SLOTS.map(() => null), eqPlus: EQUIP_SLOTS.map(() => undefined),
+    attrs: undefined as unknown as Attributes,
+  };
+  c.classId = p.classId;
+  c.vit = p.stats.VIT; c.int = p.stats.INT; c.str = p.stats.STR; c.dex = p.stats.DEX;
+  for (let i = 0; i < EQUIP_SLOTS.length; i++) {
+    const st = p.equipment[EQUIP_SLOTS[i]];
+    c.eqId[i] = st ? st.defId : null;
+    c.eqPlus[i] = st?.plus;
+  }
+  c.attrs = effectiveAttributes(p.classId, p.stats, p.equipment);
+  if (!hit) attrCache.set(p, c);
+  return c.attrs;
+}
+
 /** Per-correct-char typing damage from a character's physical damage (integer, ≥1). */
 export const physCharDamage = (attrs: Attributes): number =>
   Math.max(1, Math.round(attrs.physicalDamage * PHYS_DAMAGE_SCALE));
@@ -97,16 +157,16 @@ export const physCharDamage = (attrs: Attributes): number =>
  *  The class base is already inside `health`, so only hpPerLevel*(level-1) is added on top —
  *  at 0 stats/gear this equals the old baseHp + hpPerLevel*(level-1). */
 export const maxHp = (p: Player): number =>
-  effectiveAttributes(p.classId, p.stats, p.equipment).health + CLASSES[p.classId].hpPerLevel * (p.level - 1);
+  playerAttributes(p).health + CLASSES[p.classId].hpPerLevel * (p.level - 1);
 
 export const maxMp = (p: Player): number =>
-  effectiveAttributes(p.classId, p.stats, p.equipment).energy + CLASSES[p.classId].mpPerLevel * (p.level - 1);
+  playerAttributes(p).energy + CLASSES[p.classId].mpPerLevel * (p.level - 1);
 
 /** Effective movement speed (tiles/s): movementSpeed as a % bonus over the class's OWN
  *  baseline, so every class moves at ≈ PLAYER_SPEED with default gear (v4-3). */
 export function moveSpeed(p: Player): number {
-  const base = baseAttributes(p.classId).movementSpeed;
-  const eff = effectiveAttributes(p.classId, p.stats, p.equipment).movementSpeed;
+  const base = BASE_ATTRS[p.classId].movementSpeed;
+  const eff = playerAttributes(p).movementSpeed;
   const factor = Math.max(0.6, Math.min(1.8, 1 + (eff - base) * MOVE_PER_POINT));
   return PLAYER_SPEED * factor;
 }
@@ -114,8 +174,8 @@ export function moveSpeed(p: Player): number {
 /** Correct letters required per bow arrow: BOW_BASE_CHARS_PER_ARROW reduced by attackSpeed
  *  over the class baseline, clamped to [2,5]. Pure helper — bow tempo is wired in C2. */
 export function arrowsPerCharsInterval(p: Player): number {
-  const base = baseAttributes(p.classId).attackSpeed;
-  const eff = effectiveAttributes(p.classId, p.stats, p.equipment).attackSpeed;
+  const base = BASE_ATTRS[p.classId].attackSpeed;
+  const eff = playerAttributes(p).attackSpeed;
   const chars = Math.round(BOW_BASE_CHARS_PER_ARROW - (eff - base) * ATK_PER_POINT);
   return Math.max(2, Math.min(5, chars));
 }
