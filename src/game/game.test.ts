@@ -20,9 +20,12 @@ import { MOBS } from './mobs';
 import { EQUIP_SLOTS } from './types';
 import { rand } from './rng';
 import { applySave, makeSave, newGame, update } from './sim';
-import type { ClassId, GameState, Mob, SaveData, Vec2 } from './types';
+import type { ClassId, GameState, Mob, Mode, SaveData, Vec2 } from './types';
 import { routeKeydown } from '../input';
 import type { KeyInfo } from '../input';
+import { canSetCombatModifier, cloneKeymap, DEFAULT_KEYMAP, findConflict, validateCapture } from '../keybinds';
+import type { Captured, Keymap } from '../keybinds';
+import { topmostWindow } from '../ui/windows';
 
 /** A controlled state: player at spawn, exactly these mobs, combat synced. */
 function stateWith(mobs: { defId: string; pos: Vec2; hp?: number; shield?: boolean; shieldsUsed?: number }[]): GameState {
@@ -570,75 +573,185 @@ describe('arrowsPerCharsInterval derivation (bow tempo helper)', () => {
 describe('routeKeydown (pure keystroke router)', () => {
   const k = (over: Partial<KeyInfo> & { code: string }): KeyInfo =>
     ({ key: '', altKey: false, ctrlKey: false, metaKey: false, ...over });
+  // Route against the factory keymap; travelUnlocked defaults false (combat-modifier not held).
+  const r = (mode: Mode, windowOpen: boolean, info: KeyInfo, unlocked = false) =>
+    routeKeydown(mode, windowOpen, info, DEFAULT_KEYMAP, unlocked);
 
+  // --- default keymap reproduces today's semantics ---
   it('travel: a digit enters fight and selects that fire mode', () => {
-    const r = routeKeydown('travel', false, k({ code: 'Digit2', key: '2' }));
-    expect(r.mode).toBe('fight');
-    expect(r.clearHeld).toBe(true);
-    expect(r.events).toEqual([{ type: 'setMode', mode: 'fight' }, { type: 'setFireMode', fireMode: 2 }]);
-    expect(r.events.some((e) => e.type === 'char')).toBe(false);
+    const res = r('travel', false, k({ code: 'Digit2', key: '2' }));
+    expect(res.mode).toBe('fight');
+    expect(res.clearHeld).toBe(true);
+    expect(res.events).toEqual([{ type: 'setMode', mode: 'fight' }, { type: 'setFireMode', fireMode: 2 }]);
+    expect(res.events.some((e) => e.type === 'char')).toBe(false);
   });
 
   it('travel: Space enters fight with fire mode 1', () => {
-    const r = routeKeydown('travel', false, k({ code: 'Space', key: ' ' }));
-    expect(r.mode).toBe('fight');
-    expect(r.events).toEqual([{ type: 'setMode', mode: 'fight' }, { type: 'setFireMode', fireMode: 1 }]);
+    const res = r('travel', false, k({ code: 'Space', key: ' ' }));
+    expect(res.mode).toBe('fight');
+    expect(res.events).toEqual([{ type: 'setMode', mode: 'fight' }, { type: 'setFireMode', fireMode: 1 }]);
   });
 
-  it('travel: WSAD/arrows are movement, other printables are inert (no typing)', () => {
-    expect(routeKeydown('travel', false, k({ code: 'KeyW', key: 'w' })).movePress).toBe(0);
-    expect(routeKeydown('travel', false, k({ code: 'ArrowLeft' })).movePress).toBe(3);
-    const q = routeKeydown('travel', false, k({ code: 'KeyQ', key: 'q' }));
+  it('travel: WSAD move (one slot each); arrows are unbound by default; other letters inert', () => {
+    expect(r('travel', false, k({ code: 'KeyW', key: 'w' })).movePress).toBe(0);
+    expect(r('travel', false, k({ code: 'KeyA', key: 'a' })).movePress).toBe(3);
+    expect(r('travel', false, k({ code: 'ArrowLeft' })).movePress).toBeNull(); // arrows unbound by default now
+    const q = r('travel', false, k({ code: 'KeyQ', key: 'q' }));
     expect(q.movePress).toBeNull();
     expect(q.events).toEqual([]); // letters don't type in travel
   });
 
-  it('travel: i/c toggle windows without typing', () => {
-    expect(routeKeydown('travel', false, k({ code: 'KeyI', key: 'i' })).ui).toBe('toggleInventory');
-    expect(routeKeydown('travel', false, k({ code: 'KeyC', key: 'c' })).ui).toBe('toggleCharacter');
+  it('travel: i/c toggle windows; Tab toggles inventory (hardcoded system key)', () => {
+    expect(r('travel', false, k({ code: 'KeyI', key: 'i' })).ui).toBe('toggleInventory');
+    expect(r('travel', false, k({ code: 'KeyC', key: 'c' })).ui).toBe('toggleCharacter');
+    expect(r('travel', false, k({ code: 'Tab', key: 'Tab' })).ui).toBe('toggleInventory');
   });
 
   it('fight: Space types a space', () => {
-    const r = routeKeydown('fight', false, k({ code: 'Space', key: ' ' }));
-    expect(r.mode).toBe('fight');
-    expect(r.preventDefault).toBe(true);
-    expect(r.events).toEqual([{ type: 'char', ch: ' ' }]);
+    const res = r('fight', false, k({ code: 'Space', key: ' ' }));
+    expect(res.mode).toBe('fight');
+    expect(res.preventDefault).toBe(true);
+    expect(res.events).toEqual([{ type: 'char', ch: ' ' }]);
   });
 
   it('fight: a plain digit types (prompts may contain them)', () => {
-    expect(routeKeydown('fight', false, k({ code: 'Digit2', key: '2' })).events).toEqual([{ type: 'char', ch: '2' }]);
+    expect(r('fight', false, k({ code: 'Digit2', key: '2' })).events).toEqual([{ type: 'char', ch: '2' }]);
   });
 
   it('fight: Alt+digit selects the fire mode and does NOT type', () => {
-    const r = routeKeydown('fight', false, k({ code: 'Digit3', key: '3', altKey: true }));
-    expect(r.events).toEqual([{ type: 'setFireMode', fireMode: 3 }]);
-    expect(r.events.some((e) => e.type === 'char')).toBe(false);
-    expect(r.mode).toBe('fight');
-  });
-
-  it('fight: Esc exits to travel', () => {
-    const r = routeKeydown('fight', false, k({ code: 'Escape', key: 'Escape' }));
-    expect(r.mode).toBe('travel');
-    expect(r.events).toEqual([{ type: 'setMode', mode: 'travel' }]);
+    const res = r('fight', false, k({ code: 'Digit3', key: '3', altKey: true }), true);
+    expect(res.events).toEqual([{ type: 'setFireMode', fireMode: 3 }]);
+    expect(res.events.some((e) => e.type === 'char')).toBe(false);
+    expect(res.mode).toBe('fight');
   });
 
   it('fight: Backspace is inert — it does not exit fight (no delete-buffer to erase)', () => {
-    const r = routeKeydown('fight', false, k({ code: 'Backspace', key: 'Backspace' }));
-    expect(r.mode).toBe('fight');
-    expect(r.events).toEqual([]);
+    const res = r('fight', false, k({ code: 'Backspace', key: 'Backspace' }));
+    expect(res.mode).toBe('fight');
+    expect(res.events).toEqual([]);
   });
 
-  it('fight: Esc closes an open window before it exits fight', () => {
-    const r = routeKeydown('fight', true, k({ code: 'Escape', key: 'Escape' }));
-    expect(r.ui).toBe('closeWindows');
-    expect(r.mode).toBe('fight'); // still in fight — a second Esc (no window) exits
-    expect(r.events).toEqual([]);
+  // --- combat-modifier unlock (travel actions inside fight) ---
+  it('fight: a bound travel key is inert (types) without the modifier, moves with it', () => {
+    // W is moveUp. Without the modifier held it resolves as typed combat input (reservation).
+    expect(r('fight', false, k({ code: 'KeyW', key: 'w' }), false).events).toEqual([{ type: 'char', ch: 'w' }]);
+    // With the modifier held, the same physical Alt+W resolves to movement, no typed char.
+    const moved = r('fight', false, k({ code: 'KeyW', key: 'w', altKey: true }), true);
+    expect(moved.movePress).toBe(0);
+    expect(moved.events).toEqual([]);
   });
 
-  it('backtick returns to travel from fight without typing', () => {
-    const r = routeKeydown('fight', false, k({ code: 'Backquote', key: '`' }));
-    expect(r.mode).toBe('travel');
-    expect(r.events).toEqual([{ type: 'setMode', mode: 'travel' }]);
+  it('fight: an Alt/Ctrl combat combo fires without emitting a typed char', () => {
+    const res = r('fight', false, k({ code: 'KeyQ', key: 'q', altKey: true }), true); // exitFight = Alt+Q
+    expect(res.mode).toBe('travel');
+    expect(res.events).toEqual([{ type: 'setMode', mode: 'travel' }]);
+    expect(res.events.some((e) => e.type === 'char')).toBe(false);
+  });
+
+  it('fight: enterFight actions do NOT fire in the unlocked branch (no fireMode reset)', () => {
+    // Alt+Space in fight+unlocked must not re-trigger enterFight1 (bound to Space).
+    const res = r('fight', false, k({ code: 'Space', key: ' ', altKey: true }), true);
+    expect(res.events.some((e) => e.type === 'setFireMode')).toBe(false);
+    expect(res.events.some((e) => e.type === 'setMode')).toBe(false);
+  });
+
+  // --- Esc ladder (two jobs; job 3 is a Part-2 no-op) ---
+  it('Esc closes the topmost window when one is open (either mode)', () => {
+    const res = r('fight', true, k({ code: 'Escape', key: 'Escape' }));
+    expect(res.ui).toBe('closeTopWindow');
+    expect(res.mode).toBe('fight');
+    expect(res.events).toEqual([]);
+  });
+
+  it('Esc in travel with no window open opens options', () => {
+    const res = r('travel', false, k({ code: 'Escape', key: 'Escape' }));
+    expect(res.ui).toBe('openOptions');
+    expect(res.events).toEqual([]);
+  });
+
+  it('Esc in fight with no window open does nothing (Part-2 slot)', () => {
+    const res = r('fight', false, k({ code: 'Escape', key: 'Escape' }));
+    expect(res.ui).toBeNull();
+    expect(res.mode).toBe('fight');
+    expect(res.events).toEqual([]);
+  });
+});
+
+describe('keybind validation + conflicts', () => {
+  const cap = (over: Partial<Captured> & { code: string; key: string }): Captured =>
+    ({ alt: false, ctrl: false, shift: false, meta: false, ...over });
+
+  it('rejects a plain letter/digit for a combat action, accepts an Alt/Ctrl combo', () => {
+    expect(validateCapture('exitFight', cap({ code: 'KeyG', key: 'g' }), DEFAULT_KEYMAP).ok).toBe(false);
+    expect(validateCapture('exitFight', cap({ code: 'KeyG', key: 'g', ctrl: true }), DEFAULT_KEYMAP).ok).toBe(true);
+  });
+
+  it('rejects reserved keys and Shift/Meta captures', () => {
+    expect(validateCapture('moveUp', cap({ code: 'Escape', key: 'Escape' }), DEFAULT_KEYMAP).ok).toBe(false);
+    expect(validateCapture('moveUp', cap({ code: 'Tab', key: 'Tab' }), DEFAULT_KEYMAP).ok).toBe(false);
+    expect(validateCapture('moveUp', cap({ code: 'KeyJ', key: 'j', shift: true }), DEFAULT_KEYMAP).ok).toBe(false);
+  });
+
+  it('rejects a travel action bound to the current combat modifier', () => {
+    // cm = alt by default; Alt+J for a travel action would be unreachable in fight.
+    expect(validateCapture('moveUp', cap({ code: 'KeyJ', key: 'j', alt: true }), DEFAULT_KEYMAP).ok).toBe(false);
+  });
+
+  it('findConflict blocks a duplicate combo and names the owner', () => {
+    expect(findConflict({ code: 'Digit2', alt: false, ctrl: false }, DEFAULT_KEYMAP, 'moveUp')).toBe('enterFight2');
+    expect(findConflict({ code: 'KeyW', alt: false, ctrl: false }, DEFAULT_KEYMAP, 'moveUp')).toBeNull(); // self is not a conflict
+  });
+
+  it('canSetCombatModifier blocks a switch that would strand a travel binding', () => {
+    expect(canSetCombatModifier('ctrl', DEFAULT_KEYMAP).ok).toBe(true); // defaults are plain keys
+    const km: Keymap = cloneKeymap(DEFAULT_KEYMAP);
+    km.bindings.moveUp = { code: 'KeyW', alt: false, ctrl: true }; // a Ctrl+W travel binding
+    const res = canSetCombatModifier('ctrl', km);
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.offenders).toContain('moveUp');
+  });
+});
+
+describe('topmostWindow (Esc close priority)', () => {
+  it('options always wins, else the last-opened (LIFO)', () => {
+    expect(topmostWindow(['inventory', 'character', 'options'])).toBe('options');
+    expect(topmostWindow(['options', 'inventory'])).toBe('options');
+    expect(topmostWindow(['inventory', 'character'])).toBe('character');
+    expect(topmostWindow(['character', 'inventory'])).toBe('inventory');
+    expect(topmostWindow([])).toBeNull();
+  });
+});
+
+describe('travelUnlocked movement gate (combat-modifier unlock)', () => {
+  const withAggro = (): GameState => {
+    const s = newGame(1);
+    s.mobs = [{
+      id: 1, defId: 'slime', pos: { ...NEAR }, hp: MOBS.slime.hp,
+      state: 'aggro', spotIdx: 0, home: { ...NEAR }, shield: false, shieldsUsed: 0,
+    }];
+    return s;
+  };
+
+  it('does not move in fight without the modifier held', () => {
+    const s = withAggro();
+    update(s, [{ type: 'setMode', mode: 'fight' }, { type: 'move', dirs: [1] }], SIM_DT);
+    const x0 = s.player.pos.x;
+    update(s, [], SIM_DT);
+    expect(s.player.pos.x).toBe(x0); // locked — typing, not walking
+  });
+
+  it('moves while unlocked, and re-locks the same tick the modifier releases', () => {
+    const s = withAggro();
+    update(s, [
+      { type: 'setMode', mode: 'fight' }, { type: 'setTravelUnlocked', value: true }, { type: 'move', dirs: [1] },
+    ], SIM_DT);
+    const x1 = s.player.pos.x;
+    update(s, [], SIM_DT);
+    expect(s.player.pos.x).toBeGreaterThan(x1); // still moving while unlocked
+    const x2 = s.player.pos.x;
+    update(s, [{ type: 'setTravelUnlocked', value: false }], SIM_DT); // release mid-hold
+    expect(s.player.pos.x).toBe(x2); // stopped immediately, same tick
+    expect(s.mode).toBe('fight');    // still in fight; held is untouched
   });
 });
 

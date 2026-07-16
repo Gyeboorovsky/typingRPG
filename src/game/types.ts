@@ -120,6 +120,7 @@ export type InputEvent =
   | { type: 'move'; dirs: Dir[] } // currently held dirs, newest last
   | { type: 'setMode'; mode: Mode }        // travel ↔ fight (typing prompt shows only in fight)
   | { type: 'setFireMode'; fireMode: number } // bow fire mode (1..4); behavior wired later
+  | { type: 'setTravelUnlocked'; value: boolean } // combat-modifier held → travel actions/move unlocked in fight
   | { type: 'ult' }
   | { type: 'respawn' }
   | { type: 'allocateStat'; stat: StatId }
@@ -144,6 +145,7 @@ export interface GameState {
   combat: CombatState | null;
   mode: Mode;   // travel = free movement, no prompt; fight = typing-combat prompt shown
   fireMode: number; // selected bow fire mode (1..4); behavior wired later. Transient (not saved).
+  travelUnlocked: boolean; // combat-modifier held right now → travel actions + movement work in fight. Transient (not saved).
   held: Dir[]; // held movement keys, newest last
   fx: Fx[];
   bossKilled: boolean;

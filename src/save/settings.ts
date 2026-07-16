@@ -1,0 +1,53 @@
+// Device-wide settings persistence — the ONE global keymap + combat-modifier, shared by
+// every character and stored OUTSIDE the character save slots. Its own localStorage key
+// (a sibling of backends.ts's `typingRPG.save.<slot>`), never threaded through SaveData.
+// Loaded synchronously at boot so the very first keydown already sees the real bindings.
+import { ACTION_ORDER, cloneKeymap, DEFAULT_KEYMAP } from '../keybinds';
+import type { Combo, Keymap, ModifierKey } from '../keybinds';
+
+const SETTINGS_KEY = 'typingRPG.settings';
+
+interface StoredSettings {
+  version: 1;
+  combatModifier: ModifierKey;
+  bindings: Partial<Record<string, Combo>>;
+}
+
+const isCombo = (v: unknown): v is Combo =>
+  !!v && typeof v === 'object'
+  && typeof (v as Combo).code === 'string'
+  && typeof (v as Combo).alt === 'boolean'
+  && typeof (v as Combo).ctrl === 'boolean';
+
+/** Load the global keymap. Missing/corrupt → factory defaults; per-action deep-merge over
+ *  defaults so adding an action in a later version never wipes existing binds. Never throws. */
+export function loadSettings(): Keymap {
+  const keymap = cloneKeymap(DEFAULT_KEYMAP);
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return keymap;
+    const data = JSON.parse(raw) as StoredSettings;
+    if (data.combatModifier === 'alt' || data.combatModifier === 'ctrl') {
+      keymap.combatModifier = data.combatModifier;
+    }
+    if (data.bindings && typeof data.bindings === 'object') {
+      for (const id of ACTION_ORDER) {
+        const b = data.bindings[id];
+        if (isCombo(b)) keymap.bindings[id] = { code: b.code, alt: b.alt, ctrl: b.ctrl };
+      }
+    }
+  } catch { /* corrupt storage → defaults */ }
+  return keymap;
+}
+
+/** Persist the global keymap. Best-effort — a storage failure (private mode / quota) is ignored. */
+export function saveSettings(keymap: Keymap): void {
+  try {
+    const data: StoredSettings = {
+      version: 1,
+      combatModifier: keymap.combatModifier,
+      bindings: keymap.bindings,
+    };
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(data));
+  } catch { /* ignore */ }
+}

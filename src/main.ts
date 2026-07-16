@@ -10,6 +10,11 @@ import { isTauri, pickFileBackend, supportsFilePicker } from './save/backends';
 import { SaveManager } from './save/save';
 import { CharSelect } from './ui/charselect';
 import { Hud } from './ui/hud';
+import { OptionsMenu } from './ui/options';
+import { loadSettings, saveSettings } from './save/settings';
+import {
+  ACTIONS, canSetCombatModifier, cloneKeymap, DEFAULT_KEYMAP, modifierLabel, validateCapture,
+} from './keybinds';
 
 const canvas = document.getElementById('game') as HTMLCanvasElement;
 const ctx = canvas.getContext('2d')!;
@@ -32,6 +37,7 @@ window.addEventListener('contextmenu', (e) => e.preventDefault());
 async function boot(): Promise<void> {
   const state: GameState = newGame((Date.now() ^ (Math.random() * 0xffffffff)) | 0);
   let blocked = true; // no character chosen yet — sim stays frozen behind the select screen
+  let keymap = loadSettings(); // device-wide binding set + combat-modifier (outside character saves)
 
   const saver = new SaveManager();
   await saver.setup();
@@ -40,12 +46,47 @@ async function boot(): Promise<void> {
   const hud = new Hud();
   const renderer = new Renderer(ctx);
   const charSelect = new CharSelect();
+  input.setKeymap(keymap);
+
+  // Options window. main.ts is the single source of truth for the keymap; the view emits
+  // rebind / modifier / restore intents that we validate, persist, and push back into Input.
+  const options = new OptionsMenu({
+    getKeymap: () => keymap,
+    tryRebind: (id, cap) => {
+      const res = validateCapture(id, cap, keymap);
+      if (!res.ok) return res;
+      keymap.bindings[id] = res.combo;
+      saveSettings(keymap);
+      input.setKeymap(keymap);
+      return { ok: true };
+    },
+    setCombatModifier: (m) => {
+      const check = canSetCombatModifier(m, keymap);
+      if (!check.ok) {
+        const names = check.offenders.map((o) => ACTIONS[o].label).join(', ');
+        return { ok: false, reason: `Rebind ${names} first — ${modifierLabel(m)} would be unreachable in fight.` };
+      }
+      keymap.combatModifier = m;
+      saveSettings(keymap);
+      input.setKeymap(keymap);
+      return { ok: true };
+    },
+    restoreDefaults: () => {
+      keymap = cloneKeymap(DEFAULT_KEYMAP);
+      saveSettings(keymap);
+      input.setKeymap(keymap);
+    },
+  });
+  hud.attachOptions(options);
 
   input.enabled = () => !blocked;
-  input.windowOpen = () => hud.anyWindowOpen();
+  // Char-select counts as a window for Esc precedence — otherwise Esc would open options over it.
+  input.windowOpen = () => hud.anyWindowOpen() || charSelect.isOpen;
   input.onToggleInventory = () => { if (!blocked) hud.toggleInventory(state); };
   input.onToggleCharacter = () => { if (!blocked) hud.toggleStats(); };
-  input.onCloseWindows = () => { hud.closeInventory(); hud.closeStats(); charSelect.close(); };
+  input.onOpenOptions = () => { if (!blocked) hud.openOptions(keymap); };
+  input.onCloseTopWindow = () => { if (charSelect.isOpen) { charSelect.close(); return; } hud.closeTopWindow(); };
+  document.getElementById('options-open-btn')!.addEventListener('click', () => { if (!blocked) hud.openOptions(keymap); });
   hud.onAllocateStat = (stat) => input.push({ type: 'allocateStat', stat });
   hud.onEquip = (index) => input.push({ type: 'equip', index });
   hud.onUnequip = (slot, x, y) => input.push({ type: 'unequip', slot, x, y });

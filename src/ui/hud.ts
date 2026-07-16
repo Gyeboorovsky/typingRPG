@@ -9,6 +9,9 @@ import { INV_PAGE_H, INV_W, XP_CURVE } from '../game/constants';
 import { firstFreeCell, ITEMS, itemSize, rectFree } from '../game/items';
 import { MOBS } from '../game/mobs';
 import type { EquipSlot, Fx, GameState, ItemStack, Player } from '../game/types';
+import type { Keymap } from '../keybinds';
+import { topmostWindow } from './windows';
+import type { WindowId } from './windows';
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 
@@ -51,6 +54,10 @@ const SLOT_GLYPH: Record<EquipSlot, string> =
 const SLOT_LABEL: Record<EquipSlot, string> =
   { weapon: 'Weapon', armor: 'Armor', helmet: 'Helmet', boots: 'Boots', necklace: 'Necklace', ring: 'Ring' };
 
+/** The options window's view, attached by main.ts. Hud owns open/close + z-order;
+ *  the view owns the body content and re-renders from the live keymap on open. */
+interface OptionsView { render(keymap: Keymap): void; cancelCapture(): void }
+
 export class Hud {
   private els = {
     hpFill: $('hp-fill'), hpText: $('hp-text'),
@@ -73,10 +80,14 @@ export class Hud {
     statPlusBtns: Array.from(document.querySelectorAll<HTMLButtonElement>('.stat-plus')),
     attrVals: Object.fromEntries(ATTR_IDS.map((a) => [a, $(`attr-val-${a}`)])) as Record<AttributeId, HTMLElement>,
     death: $('death'), saveDot: $('save-dot'),
+    options: $('options'), optionsClose: $('options-close-btn'),
   };
   private invOpen = false;
   private invPage = 0; // visible bag page (0-based; tabs I/II/III)
   private statsOpen = false;
+  private optionsOpen = false;
+  private openOrder: WindowId[] = []; // currently-open windows in open order (Esc closes topmost)
+  private options: OptionsView | null = null;
   private lastInvRev = -1;
   private lastFlash = 0;
   private cache: Record<string, string | number | boolean> = {};
@@ -105,6 +116,7 @@ export class Hud {
       btn.addEventListener('click', () => this.onAllocateStat(btn.dataset.stat as StatId));
     }
     this.els.invClose.addEventListener('click', () => this.closeInventory());
+    this.els.optionsClose.addEventListener('click', () => this.closeOptions());
     for (const btn of this.els.invPageBtns) {
       btn.addEventListener('click', () => this.setInvPage(Number(btn.dataset.page)));
     }
@@ -269,22 +281,41 @@ export class Hud {
     }
   }
 
+  /** Register the options window's view (built in main.ts with its rebind callbacks). */
+  attachOptions(view: OptionsView): void { this.options = view; }
+
+  private markOpen(id: WindowId): void { if (!this.openOrder.includes(id)) this.openOrder.push(id); }
+  private markClosed(id: WindowId): void {
+    const i = this.openOrder.indexOf(id);
+    if (i >= 0) this.openOrder.splice(i, 1);
+  }
+
   toggleInventory(state: GameState): void {
     if (this.drag?.mode === 'carry') { this.endCarry(); return; } // Tab first releases the carried item
     this.invOpen = !this.invOpen;
     this.els.inventory.classList.toggle('hidden', !this.invOpen);
-    if (this.invOpen) this.rebuildInventory(state);
+    if (this.invOpen) { this.markOpen('inventory'); this.rebuildInventory(state); }
+    else this.markClosed('inventory');
   }
 
-  /** Is any HUD window open (inventory / character) or an item mid-carry? Drives Esc precedence:
-   *  Esc closes the window before it exits fight mode. */
+  /** Is any HUD window open (inventory / character / options) or an item mid-carry? Drives Esc
+   *  precedence: Esc closes the topmost window before it does anything else. */
   anyWindowOpen(): boolean {
-    return this.invOpen || this.statsOpen || this.drag?.mode === 'carry';
+    return this.invOpen || this.statsOpen || this.optionsOpen || this.drag?.mode === 'carry';
+  }
+
+  /** Close the topmost open window — options always wins, else the last-opened (LIFO). */
+  closeTopWindow(): void {
+    const top = topmostWindow(this.openOrder);
+    if (top === 'options') this.closeOptions();
+    else if (top === 'character') this.closeStats();
+    else if (top === 'inventory') this.closeInventory();
   }
 
   closeInventory(): void {
     if (this.drag?.mode === 'carry') { this.endCarry(); return; } // Esc/X first releases the carried item
     this.invOpen = false;
+    this.markClosed('inventory');
     this.els.inventory.classList.add('hidden');
     this.hideTooltip();
   }
@@ -295,12 +326,28 @@ export class Hud {
 
   openStats(): void {
     this.statsOpen = true;
+    this.markOpen('character');
     this.els.statspanel.classList.remove('hidden');
   }
 
   closeStats(): void {
     this.statsOpen = false;
+    this.markClosed('character');
     this.els.statspanel.classList.add('hidden');
+  }
+
+  openOptions(keymap: Keymap): void {
+    this.optionsOpen = true;
+    this.markOpen('options');
+    this.els.options.classList.remove('hidden');
+    this.options?.render(keymap);
+  }
+
+  closeOptions(): void {
+    this.optionsOpen = false;
+    this.markClosed('options');
+    this.options?.cancelCapture(); // don't leave a "press a key…" listener armed
+    this.els.options.classList.add('hidden');
   }
 
   private syncStats(p: GameState['player']): void {

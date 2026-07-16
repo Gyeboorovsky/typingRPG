@@ -24,7 +24,7 @@ export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior
       dead: false, ultCooldown: 0, animT: 0,
     },
     mobs: [], drops: [], spots: SPOTS.map(() => ({ pending: [] })),
-    combat: null, mode: 'travel', fireMode: 1, held: [], fx: [], bossKilled: false, dirty: false, nextId: 1,
+    combat: null, mode: 'travel', fireMode: 1, travelUnlocked: false, held: [], fx: [], bossKilled: false, dirty: false, nextId: 1,
   };
   state.player.hp = maxHp(state.player);
   state.player.mp = maxMp(state.player);
@@ -38,6 +38,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
     if (e.type === 'move') state.held = e.dirs;
     else if (e.type === 'setMode') setMode(state, e.mode);
     else if (e.type === 'setFireMode') state.fireMode = e.fireMode;
+    else if (e.type === 'setTravelUnlocked') state.travelUnlocked = e.value;
     else if (e.type === 'char') resolveKeystroke(state, e.ch);
     else if (e.type === 'ult') tryUltimate(state);
     else if (e.type === 'respawn') respawnPlayer(state);
@@ -74,7 +75,7 @@ function setMode(state: GameState, mode: GameState['mode']): void {
 function stepPlayer(state: GameState, dt: number): void {
   const p = state.player;
   if (p.dead) return;
-  if (state.mode !== 'travel') return;
+  if (state.mode !== 'travel' && !state.travelUnlocked) return; // in fight, move only while the combat-modifier is held
   if (state.held.length === 0) return;
   let vx = 0, vy = 0;
   for (const d of state.held) { vx += DIR_VECS[d].x; vy += DIR_VECS[d].y; }
