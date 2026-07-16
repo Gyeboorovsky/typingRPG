@@ -20,7 +20,6 @@ export interface ClassDef {
   id: ClassId; name: string;
   baseHp: number; hpPerLevel: number; baseMp: number; mpPerLevel: number;
   hpRegen: number; hpRegenCombat: number; mpRegen: number;
-  baseDamage: number;
   ult: { id: string; name: string; manaCost: number; streakThreshold: number; cooldown: number };
 }
 

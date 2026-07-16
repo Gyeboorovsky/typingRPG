@@ -16,7 +16,6 @@ export const RADIUS_MAX = 5.0;
 export const PHYS_DAMAGE_SCALE = 0.25; // per-correct-char dmg = round(physicalDamage * this); warrior base 8 → 2/char
 export const WEAPON_ILVL_DMG = 0.5;    // equipped weapon adds itemLevel*this to physicalDamage (ilvl5 → +2.5)
 export const DEFENSE_K = 100;          // melee mitigation: dmg * K/(K+defense); base def 5 → ~4.8% off
-export const TYPO_DAMAGE: Record<number, number> = { 1: 3, 2: 6, 3: 10, 4: 15 };
 export const BOSS_ENRAGE_HP = 0.5;    // fraction of max HP
 export const BOSS_ENRAGE_TYPO_MULT = 1.5;
 export const BOSS_SHIELD_AT = [0.66, 0.33]; // HP fractions triggering shield phases
