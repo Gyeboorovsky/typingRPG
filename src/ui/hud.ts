@@ -6,13 +6,36 @@ import type { AttributeId, StatId } from '../game/attributes';
 import { classOf } from '../game/classes';
 import { aggroed, radiusFor } from '../game/combat';
 import { INV_H, INV_W, XP_CURVE } from '../game/constants';
-import { ITEMS, itemSize } from '../game/items';
+import { firstFreeCell, ITEMS, itemSize, rectFree } from '../game/items';
 import { MOBS } from '../game/mobs';
 import type { EquipSlot, Fx, GameState, ItemStack, Player } from '../game/types';
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
 
 const ATTR_IDS: AttributeId[] = ['health', 'energy', 'defense', 'physicalDamage', 'magicDamage', 'movementSpeed', 'dodge', 'attackSpeed'];
+
+// Human labels for the tooltip's attribute-bonus lines.
+const ATTR_LABEL: Record<AttributeId, string> = {
+  health: 'Health', energy: 'Energy', defense: 'Defense',
+  physicalDamage: 'Physical dmg', magicDamage: 'Magic dmg',
+  movementSpeed: 'Move speed', dodge: 'Dodge', attackSpeed: 'Attack speed',
+};
+
+const cap = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
+
+// A live drag session (grid item being repositioned/equipped, or a worn item unequipped).
+type DragSource =
+  | { kind: 'grid'; index: number; st: ItemStack & { x: number; y: number } }
+  | { kind: 'equip'; slot: EquipSlot; st: ItemStack };
+interface DragState {
+  source: DragSource;
+  el: HTMLElement;          // the origin tile (dimmed while dragging)
+  ghost: HTMLElement | null;
+  grabDX: number; grabDY: number; // pointer offset within the tile at grab time
+  w: number; h: number;    // footprint in cells
+  started: boolean;        // crossed the move threshold → real drag, not a click
+  startX: number; startY: number;
+}
 
 // Faded placeholder glyph + label shown in an empty paperdoll slot.
 const SLOT_GLYPH: Record<EquipSlot, string> =
@@ -47,9 +70,16 @@ export class Hud {
   private lastInvRev = -1;
   private lastFlash = 0;
   private cache: Record<string, string | number | boolean> = {};
+  private state: GameState | null = null; // latest synced state, read by drag/right-click/tooltip
+  private drag: DragState | null = null;
+  private tip: HTMLElement;               // custom hover tooltip (appended to <body>)
+  private outline: HTMLElement;           // drop-target footprint indicator inside the grid
+  private hiSlot: HTMLElement | null = null; // equip slot currently drop-highlighted
   onAllocateStat: (stat: StatId) => void = () => {};
   onEquip: (index: number) => void = () => {};
   onUnequip: (slot: EquipSlot) => void = () => {};
+  onMoveItem: (index: number, x: number, y: number) => void = () => {};
+  onUseItem: (index: number) => void = () => {};
 
   constructor() {
     this.els.statsBtn.addEventListener('click', () => this.statsOpen ? this.closeStats() : this.openStats());
@@ -59,10 +89,30 @@ export class Hud {
       btn.addEventListener('click', () => this.onAllocateStat(btn.dataset.stat as StatId));
     }
     this.els.invClose.addEventListener('click', () => this.closeInventory());
-    for (const el of this.els.equipSlots) { // double-click a worn item to send it back to the bag
-      el.addEventListener('dblclick', () => {
-        if (el.classList.contains('filled')) this.onUnequip(el.dataset.slot as EquipSlot);
+
+    // Floating tooltip + grid drop-outline, created once and reused.
+    this.tip = document.createElement('div');
+    this.tip.className = 'item-tooltip hidden';
+    document.body.appendChild(this.tip);
+    this.outline = document.createElement('div');
+    this.outline.className = 'drop-outline hidden';
+
+    for (const el of this.els.equipSlots) {
+      const slot = el.dataset.slot as EquipSlot;
+      // double-click a worn item to send it back to the bag (kept from A3)
+      el.addEventListener('dblclick', () => { if (el.classList.contains('filled')) this.tryUnequip(slot); });
+      // right-click a worn item to unequip it
+      el.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+        if (el.classList.contains('filled')) this.tryUnequip(slot);
       });
+      // drag a worn item out to the grid to unequip
+      el.addEventListener('pointerdown', (e) => {
+        const st = this.state?.player.equipment[slot];
+        if (st) this.beginDrag(e, el, { kind: 'equip', slot, st });
+      });
+      el.addEventListener('pointermove', (e) => this.showSlotTip(e, slot));
+      el.addEventListener('pointerleave', () => this.hideTooltip());
     }
     this.initDrag();
   }
@@ -100,6 +150,7 @@ export class Hud {
   }
 
   sync(state: GameState, fx: Fx[]): void {
+    this.state = state;
     const p = state.player;
     const e = this.els;
     const mhp = maxHp(p), mmp = maxMp(p), need = XP_CURVE(p.level);
@@ -189,7 +240,9 @@ export class Hud {
       e.invOverflow.textContent = n ? `${n} item${n > 1 ? 's' : ''} didn't fit` : '';
     });
 
-    if (this.invOpen && p.invRev !== this.lastInvRev) this.rebuildInventory(state);
+    // Defer rebuilds while a drag is in flight so the tile being dragged isn't
+    // yanked out from under the pointer (e.g. loot picked up mid-drag).
+    if (this.invOpen && p.invRev !== this.lastInvRev && !this.drag) this.rebuildInventory(state);
 
     for (const f of fx) {
       if (f.kind === 'pickup') this.toast(f.text);
@@ -206,6 +259,7 @@ export class Hud {
   closeInventory(): void {
     this.invOpen = false;
     this.els.inventory.classList.add('hidden');
+    this.hideTooltip();
   }
 
   openStats(): void {
@@ -244,7 +298,8 @@ export class Hud {
   }
 
   /** Redraw the positioned grid: a backdrop of empty cells, then each item drawn
-   *  across its w×h footprint. Double-clicking an item equips it (A2). */
+   *  across its w×h footprint. Items are draggable (reposition / equip), double- or
+   *  right-clickable (quick-equip / use), and show a hover tooltip. */
   private renderGrid(p: Player): void {
     const grid = this.els.invGrid;
     grid.innerHTML = '';
@@ -258,9 +313,14 @@ export class Hud {
       const s = itemSize(ITEMS[st.defId]);
       tile.style.gridColumn = `${st.x + 1} / span ${s.w}`;
       tile.style.gridRow = `${st.y + 1} / span ${s.h}`;
-      tile.addEventListener('dblclick', () => this.onEquip(index));
+      tile.addEventListener('dblclick', () => this.tryEquip(index, st, tile));
+      tile.addEventListener('contextmenu', (e) => { e.preventDefault(); this.quickAction(tile, index, st); });
+      tile.addEventListener('pointerdown', (e) => this.beginDrag(e, tile, { kind: 'grid', index, st }));
+      tile.addEventListener('pointermove', (e) => this.showItemTip(e, st));
+      tile.addEventListener('pointerleave', () => this.hideTooltip());
       grid.appendChild(tile);
     });
+    grid.appendChild(this.outline); // re-attach after innerHTML wipe; stays hidden until a drag
   }
 
   /** Fill each paperdoll slot with its worn item, or a faded placeholder glyph. */
@@ -271,7 +331,7 @@ export class Hud {
       if (st) {
         const def = ITEMS[st.defId];
         el.className = `eq-slot filled t${def?.tier ?? 1}`;
-        el.title = `${def?.name ?? SLOT_LABEL[slot]}${st.plus ? ` +${st.plus}` : ''}\ndouble-click to unequip`;
+        el.removeAttribute('title'); // rich hover comes from the custom tooltip now
         el.innerHTML = `<span class="item-icon">${def?.icon ?? '❔'}</span>` +
           (st.plus && st.plus > 0 ? `<span class="plus">+${st.plus}</span>` : '');
       } else {
@@ -282,19 +342,286 @@ export class Hud {
     }
   }
 
-  /** A single grid item tile: tier-colored, emoji icon, quantity + upgrade badges. */
+  /** A single grid item tile: tier-colored, emoji icon, quantity + upgrade badges.
+   *  Hover detail comes from the custom tooltip, not a native title. */
   private itemTile(st: ItemStack): HTMLElement {
     const def = ITEMS[st.defId];
     const tile = document.createElement('div');
     tile.className = `item t${def?.tier ?? 1}`;
+    tile.style.touchAction = 'none'; // let pointer drag own the gesture on touch
     const hasPlus = !!st.plus && st.plus > 0;
-    const wpn = def?.weapon ? ` — +${def.weapon.dmgPerChar} dmg/key` : '';
-    tile.title = `${def?.name ?? st.defId}${hasPlus ? ` +${st.plus}` : ''}${wpn}` +
-      (def?.slot ? '\ndouble-click to equip' : '');
     tile.innerHTML = `<span class="item-icon">${def?.icon ?? '❔'}</span>` +
       (st.qty > 1 ? `<span class="qty">${st.qty}</span>` : '') +
       (hasPlus ? `<span class="plus">+${st.plus}</span>` : '');
     return tile;
+  }
+
+  // ---- drag & drop (pointer events; all mutations go through A2 events) ----
+
+  private cellPx(): number { return parseFloat(getComputedStyle(this.els.inventory).getPropertyValue('--cell')) || 50; }
+  private gapPx(): number { return parseFloat(getComputedStyle(this.els.inventory).getPropertyValue('--gap')) || 5; }
+  private slotEl(slot: EquipSlot): HTMLElement {
+    return this.els.equipSlots.find((el) => el.dataset.slot === slot)!;
+  }
+
+  /** Arm a drag from a grid tile or equip slot. The real drag (ghost + drop feedback)
+   *  only begins once the pointer crosses a small threshold, so plain clicks still
+   *  reach the double-click / right-click handlers. Left button only. */
+  private beginDrag(e: PointerEvent, el: HTMLElement, source: DragSource): void {
+    if (e.button !== 0 || this.drag) return;
+    const s = itemSize(ITEMS[source.st.defId]);
+    const r = el.getBoundingClientRect();
+    this.drag = {
+      source, el, ghost: null,
+      grabDX: e.clientX - r.left, grabDY: e.clientY - r.top,
+      w: s.w, h: s.h, started: false, startX: e.clientX, startY: e.clientY,
+    };
+    this.hideTooltip();
+    window.addEventListener('pointermove', this.onDragMove);
+    window.addEventListener('pointerup', this.onDragUp);
+  }
+
+  private onDragMove = (e: PointerEvent): void => {
+    const d = this.drag;
+    if (!d) return;
+    if (!d.started) {
+      if (Math.hypot(e.clientX - d.startX, e.clientY - d.startY) < 5) return;
+      d.started = true;
+      this.startGhost(d);
+      document.body.style.userSelect = 'none';
+    }
+    e.preventDefault();
+    if (d.ghost) {
+      d.ghost.style.left = `${e.clientX - d.grabDX}px`;
+      d.ghost.style.top = `${e.clientY - d.grabDY}px`;
+    }
+    this.updateDropFeedback(e.clientX, e.clientY);
+  };
+
+  private onDragUp = (e: PointerEvent): void => {
+    window.removeEventListener('pointermove', this.onDragMove);
+    window.removeEventListener('pointerup', this.onDragUp);
+    const d = this.drag;
+    this.drag = null;
+    if (!d) return;
+    this.clearDropFeedback();
+    document.body.style.userSelect = '';
+    d.ghost?.remove();
+    d.el.classList.remove('dragging-src');
+    if (!d.started) return; // was a click, not a drag — leave it to dblclick/right-click
+
+    const target = this.resolveDrop(e.clientX, e.clientY, d);
+    if (d.source.kind === 'grid') {
+      if (target.type === 'equip') this.tryEquipTo(d.source.index, d.source.st, target.slot);
+      else if (target.type === 'grid') this.tryMove(d.source, target.x, target.y, d.w, d.h, d.el);
+      else this.shakeEl(d.el); // dropped nowhere useful
+    } else {
+      if (target.type === 'grid') this.tryUnequip(d.source.slot);
+      else this.shakeEl(d.el); // can't move a worn item straight to another slot
+    }
+  };
+
+  private startGhost(d: DragState): void {
+    const cell = this.cellPx(), gap = this.gapPx();
+    const g = d.el.cloneNode(true) as HTMLElement;
+    g.classList.add('drag-ghost');
+    g.classList.remove('dragging-src', 'drop-ok', 'drop-bad');
+    g.style.width = `${d.w * cell + (d.w - 1) * gap}px`;
+    g.style.height = `${d.h * cell + (d.h - 1) * gap}px`;
+    g.style.gridColumn = ''; g.style.gridRow = '';
+    g.style.left = `${d.startX - d.grabDX}px`;
+    g.style.top = `${d.startY - d.grabDY}px`;
+    document.body.appendChild(g);
+    d.ghost = g;
+    d.el.classList.add('dragging-src');
+  }
+
+  /** Which drop target the pointer is over: an equip slot, a clamped top-left grid cell, or nothing. */
+  private resolveDrop(px: number, py: number, d: DragState):
+    { type: 'equip'; slot: EquipSlot } | { type: 'grid'; x: number; y: number } | { type: 'none' } {
+    const el = document.elementFromPoint(px, py) as HTMLElement | null;
+    if (!el) return { type: 'none' };
+    const slotEl = el.closest('.eq-slot') as HTMLElement | null;
+    if (slotEl?.dataset.slot) return { type: 'equip', slot: slotEl.dataset.slot as EquipSlot };
+    if (el.closest('#inv-grid')) {
+      const r = this.els.invGrid.getBoundingClientRect();
+      const pitch = this.cellPx() + this.gapPx();
+      const gx = Math.max(0, Math.min(INV_W - d.w, Math.round((px - d.grabDX - r.left) / pitch)));
+      const gy = Math.max(0, Math.min(INV_H - d.h, Math.round((py - d.grabDY - r.top) / pitch)));
+      return { type: 'grid', x: gx, y: gy };
+    }
+    return { type: 'none' };
+  }
+
+  /** Live valid/invalid highlight under the pointer while dragging. */
+  private updateDropFeedback(px: number, py: number): void {
+    const d = this.drag;
+    if (!d?.started) return;
+    this.clearDropFeedback();
+    const t = this.resolveDrop(px, py, d);
+    const p = this.state!.player;
+    const src = d.source;
+    if (t.type === 'equip') {
+      const slotEl = this.slotEl(t.slot);
+      const ok = src.kind === 'grid' && this.equipValidity(src.index, src.st, t.slot).ok;
+      slotEl.classList.add(ok ? 'drop-ok' : 'drop-bad');
+      this.hiSlot = slotEl;
+    } else if (t.type === 'grid') {
+      const ok = src.kind === 'grid'
+        ? rectFree(p.inventory.filter((_, i) => i !== src.index), t.x, t.y, d.w, d.h)
+        : !!firstFreeCell(p.inventory, d.w, d.h);
+      this.showOutline(t.x, t.y, d.w, d.h, ok);
+    }
+  }
+
+  private clearDropFeedback(): void {
+    if (this.hiSlot) { this.hiSlot.classList.remove('drop-ok', 'drop-bad'); this.hiSlot = null; }
+    this.outline.classList.add('hidden');
+  }
+
+  private showOutline(x: number, y: number, w: number, h: number, ok: boolean): void {
+    const cell = this.cellPx(), gap = this.gapPx();
+    const o = this.outline;
+    o.classList.remove('hidden');
+    o.classList.toggle('bad', !ok);
+    o.style.left = `${x * (cell + gap)}px`;
+    o.style.top = `${y * (cell + gap)}px`;
+    o.style.width = `${w * cell + (w - 1) * gap}px`;
+    o.style.height = `${h * cell + (h - 1) * gap}px`;
+  }
+
+  // ---- equip / unequip / move / use, each pre-checked so the sim never silently no-ops ----
+
+  /** Can inventory[index] go into `slot`? Mirrors sim.equipItem's guards (v4-2). */
+  private equipValidity(index: number, st: ItemStack, slot: EquipSlot): { ok: boolean; reason?: string } {
+    const p = this.state!.player;
+    const def = ITEMS[st.defId];
+    if (!def?.slot) return { ok: false, reason: 'Not equippable' };
+    if (def.slot !== slot) return { ok: false, reason: `${cap(def.slot)} slot only` };
+    if (p.level < (def.reqLevel ?? 0)) return { ok: false, reason: `Requires level ${def.reqLevel}` };
+    const prev = p.equipment[slot];
+    if (prev) { // the swapped-out item needs a free cell (excluding the incoming item)
+      const ps = itemSize(ITEMS[prev.defId]);
+      if (!firstFreeCell(p.inventory.filter((_, i) => i !== index), ps.w, ps.h))
+        return { ok: false, reason: 'No room to swap' };
+    }
+    return { ok: true };
+  }
+
+  /** Quick-equip (double-click / right-click gear): equip into the item's own slot. */
+  private tryEquip(index: number, st: ItemStack, el: HTMLElement): void {
+    const def = ITEMS[st.defId];
+    if (!def?.slot) return;
+    const v = this.equipValidity(index, st, def.slot);
+    if (!v.ok) { this.shakeEl(el); this.toast(v.reason!); return; }
+    this.onEquip(index);
+  }
+
+  /** Drag-equip into a specific slot; wrong slot / under-level shakes that slot + toasts. */
+  private tryEquipTo(index: number, st: ItemStack, slot: EquipSlot): void {
+    const v = this.equipValidity(index, st, slot);
+    if (!v.ok) { this.shakeEl(this.slotEl(slot)); this.toast(v.reason!); return; }
+    this.onEquip(index);
+  }
+
+  private tryMove(source: { index: number; st: { x: number; y: number } }, x: number, y: number, w: number, h: number, el: HTMLElement): void {
+    if (x === source.st.x && y === source.st.y) return; // dropped back where it was
+    const others = this.state!.player.inventory.filter((_, i) => i !== source.index);
+    if (!rectFree(others, x, y, w, h)) { this.shakeEl(el); return; }
+    this.onMoveItem(source.index, x, y);
+  }
+
+  private tryUnequip(slot: EquipSlot): void {
+    const st = this.state!.player.equipment[slot];
+    if (!st) return;
+    const s = itemSize(ITEMS[st.defId]);
+    if (!firstFreeCell(this.state!.player.inventory, s.w, s.h)) {
+      this.shakeEl(this.slotEl(slot)); this.toast('Bag full'); return;
+    }
+    this.onUnequip(slot);
+  }
+
+  /** Right-click a grid item: use a consumable (travel only, decyzja v3-3) or quick-equip gear. */
+  private quickAction(el: HTMLElement, index: number, st: ItemStack): void {
+    const def = ITEMS[st.defId];
+    if (!def) return;
+    if (def.consumable) {
+      if (this.state!.combat) { this.shakeEl(el); this.toast("Can't use in combat"); return; }
+      this.onUseItem(index);
+    } else if (def.slot) {
+      this.tryEquip(index, st, el);
+    }
+  }
+
+  private shakeEl(el: HTMLElement): void {
+    el.classList.remove('nudge');
+    void el.offsetWidth; // restart the animation
+    el.classList.add('nudge');
+    el.addEventListener('animationend', () => el.classList.remove('nudge'), { once: true });
+  }
+
+  // ---- hover tooltip ----
+
+  private showItemTip(e: PointerEvent, st: ItemStack): void {
+    if (this.drag) return;
+    this.tip.innerHTML = this.tooltipHtml(st);
+    this.tip.classList.remove('hidden');
+    this.positionTip(e.clientX, e.clientY);
+  }
+
+  private showSlotTip(e: PointerEvent, slot: EquipSlot): void {
+    if (this.drag) return;
+    const st = this.state?.player.equipment[slot];
+    if (!st) { this.hideTooltip(); return; }
+    this.tip.innerHTML = this.tooltipHtml(st);
+    this.tip.classList.remove('hidden');
+    this.positionTip(e.clientX, e.clientY);
+  }
+
+  private positionTip(px: number, py: number): void {
+    const pad = 10;
+    const r = this.tip.getBoundingClientRect();
+    let x = px + 16, y = py + 16;
+    if (x + r.width + pad > window.innerWidth) x = px - r.width - 16;
+    if (y + r.height + pad > window.innerHeight) y = window.innerHeight - r.height - pad;
+    this.tip.style.left = `${Math.max(pad, x)}px`;
+    this.tip.style.top = `${Math.max(pad, y)}px`;
+  }
+
+  private hideTooltip(): void { this.tip.classList.add('hidden'); }
+
+  /** Tooltip body: name/tier/slot, item + required level (red if too low), weapon dmg/range,
+   *  attribute bonuses, consumable effect, quantity, and an action hint. */
+  private tooltipHtml(st: ItemStack): string {
+    const def = ITEMS[st.defId];
+    if (!def) return `<div class="tt-name">${st.defId}</div>`;
+    const p = this.state?.player;
+    const plus = st.plus && st.plus > 0 ? ` +${st.plus}` : '';
+    const kind = def.weaponType ? cap(def.weaponType) : def.slot ? cap(def.slot) : cap(def.kind);
+    const rows: string[] = [
+      `<div class="tt-name" style="color:var(--tier${def.tier})">${def.name}${plus}</div>`,
+      `<div class="tt-sub">Tier ${def.tier} · ${kind}</div>`,
+    ];
+    if (def.itemLevel) rows.push(`<div class="tt-line">Item level ${def.itemLevel}</div>`);
+    if (def.reqLevel) {
+      const low = !!p && p.level < def.reqLevel;
+      rows.push(`<div class="tt-line${low ? ' tt-bad' : ''}">Requires level ${def.reqLevel}</div>`);
+    }
+    if (def.weapon) {
+      rows.push(`<div class="tt-line tt-buff">+${def.weapon.dmgPerChar} dmg / key</div>`);
+      if (def.weapon.range) rows.push(`<div class="tt-line">Range ${def.weapon.range} tiles</div>`);
+    }
+    if (def.bonuses)
+      for (const key of Object.keys(def.bonuses) as AttributeId[]) {
+        const v = def.bonuses[key] ?? 0;
+        rows.push(`<div class="tt-line tt-buff">${v >= 0 ? '+' : ''}${v} ${ATTR_LABEL[key]}</div>`);
+      }
+    if (def.consumable?.heal) rows.push(`<div class="tt-line tt-buff">Restores ${def.consumable.heal} HP</div>`);
+    if (def.consumable?.mana) rows.push(`<div class="tt-line tt-buff">Restores ${def.consumable.mana} MP</div>`);
+    if (st.qty > 1) rows.push(`<div class="tt-sub">Quantity ${st.qty}</div>`);
+    const hint = def.consumable ? 'Right-click to use' : def.slot ? 'Drag or double-click to equip' : '';
+    if (hint) rows.push(`<div class="tt-hint">${hint}</div>`);
+    return rows.join('');
   }
 
   private toast(text: string): void {

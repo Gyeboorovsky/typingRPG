@@ -122,7 +122,8 @@ export type InputEvent =
   | { type: 'allocateStat'; stat: StatId }
   | { type: 'equip'; index: number }         // inventory[index] → its slot
   | { type: 'unequip'; slot: EquipSlot }     // slot → first free grid cell
-  | { type: 'moveItem'; index: number; x: number; y: number }; // grid reposition
+  | { type: 'moveItem'; index: number; x: number; y: number } // grid reposition
+  | { type: 'useItem'; index: number };      // consume inventory[index] (travel only)
 
 export interface GroundDrop { id: number; defId: string; qty: number; pos: Vec2; age: number }
 

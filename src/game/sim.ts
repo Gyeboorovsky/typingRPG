@@ -41,6 +41,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
     else if (e.type === 'equip') equipItem(state, e.index);
     else if (e.type === 'unequip') unequipItem(state, e.slot);
     else if (e.type === 'moveItem') moveItem(state, e.index, e.x, e.y);
+    else if (e.type === 'useItem') useItem(state, e.index);
   }
   const p = state.player;
   if (p.ultCooldown > 0) p.ultCooldown = Math.max(0, p.ultCooldown - dt);
@@ -178,6 +179,28 @@ function moveItem(state: GameState, index: number, x: number, y: number): void {
   st.x = x; st.y = y;
   p.invRev++;
   state.dirty = true;
+}
+
+/** Consume inventory[index] if it's a consumable, applying its heal/mana. Blocked in
+ *  fight mode (decyzja v3-3): in combat, healing comes from life-leech, not potions —
+ *  the UI also gates this, but the sim guards it so a stray event can't fire mid-fight. */
+function useItem(state: GameState, index: number): void {
+  const p = state.player;
+  if (state.combat) return;                     // consumables only in travel
+  const st = p.inventory[index];
+  if (!st) return;
+  const def = ITEMS[st.defId];
+  if (!def?.consumable) return;
+  const heal = def.consumable.heal ?? 0;
+  const mana = def.consumable.mana ?? 0;
+  if (heal) p.hp = Math.min(p.hp + heal, maxHp(p));
+  if (mana) p.mp = Math.min(p.mp + mana, maxMp(p));
+  st.qty -= 1;
+  if (st.qty <= 0) p.inventory.splice(index, 1);
+  p.invRev++;
+  state.dirty = true;
+  const gain = [heal ? `+${heal} HP` : '', mana ? `+${mana} MP` : ''].filter(Boolean).join(' ');
+  state.fx.push({ kind: 'pickup', text: `${def.name} ${gain}`.trim() });
 }
 
 function respawnPlayer(state: GameState): void {

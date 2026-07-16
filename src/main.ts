@@ -47,6 +47,8 @@ async function boot(): Promise<void> {
   hud.onAllocateStat = (stat) => input.push({ type: 'allocateStat', stat });
   hud.onEquip = (index) => input.push({ type: 'equip', index });
   hud.onUnequip = (slot) => input.push({ type: 'unequip', slot });
+  hud.onMoveItem = (index, x, y) => input.push({ type: 'moveItem', index, x, y });
+  hud.onUseItem = (index) => input.push({ type: 'useItem', index });
   saver.onStatus = (clean) => hud.setSaveStatus(clean);
 
   async function refreshCharSelect(): Promise<void> {

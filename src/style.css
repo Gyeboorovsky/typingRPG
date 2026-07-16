@@ -371,6 +371,7 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
 
 /* grid ------------------------------------------------------ */
 #inv-grid {
+  position: relative; /* anchors the absolutely-positioned drop-outline */
   display: grid;
   grid-template-columns: repeat(10, var(--cell));
   grid-template-rows: repeat(6, var(--cell));
@@ -394,10 +395,42 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   box-shadow: var(--sh-sunk);
 }
 .eq-slot { width: var(--cell); height: var(--cell); }
-.item { cursor: pointer; transition: transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.3), box-shadow 0.12s; }
+.item { cursor: grab; transition: transform 0.12s cubic-bezier(0.2, 0.9, 0.3, 1.3), box-shadow 0.12s; }
 .item:hover { transform: translateY(-2px); box-shadow: 0 8px 18px rgba(0, 0, 0, 0.5), var(--sh-sunk); z-index: 2; }
-.eq-slot.filled { cursor: pointer; }
+.eq-slot.filled { cursor: grab; }
 .eq-slot.filled:hover { border-color: var(--acc-lt); }
+
+/* drag & drop ----------------------------------------------- */
+.item.dragging-src, .eq-slot.dragging-src { opacity: 0.28; }
+.drag-ghost {
+  position: fixed; z-index: 300; pointer-events: none; margin: 0;
+  opacity: 0.92; transform: scale(1.05); cursor: grabbing;
+  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.6), var(--bevel-top);
+}
+.drop-outline {
+  position: absolute; z-index: 6; pointer-events: none;
+  border: 2px dashed var(--acc); border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--acc) 18%, transparent);
+}
+.drop-outline.bad { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 18%, transparent); }
+.eq-slot.drop-ok { border-color: var(--acc-lt) !important; box-shadow: 0 0 0 2px var(--acc), var(--sh-sunk); }
+.eq-slot.drop-bad { border-color: var(--bad) !important; box-shadow: 0 0 0 2px var(--bad), var(--sh-sunk); }
+.nudge { animation: nudge 0.3s; }
+
+/* item hover tooltip ---------------------------------------- */
+.item-tooltip {
+  position: fixed; z-index: 400; pointer-events: none;
+  max-width: 232px; padding: 9px 11px;
+  background: var(--panel); border: 1px solid var(--border-lt);
+  border-radius: var(--r); box-shadow: var(--sh-float);
+  font-size: 12px; line-height: 1.5;
+}
+.tt-name { font-weight: 900; font-size: 13px; }
+.tt-sub { color: var(--dim); font-size: 11px; font-weight: 700; margin-top: 1px; }
+.tt-line { color: var(--text); font-weight: 700; margin-top: 3px; }
+.tt-buff { color: var(--acc-lt); }
+.tt-bad { color: var(--bad); }
+.tt-hint { color: var(--mute); font-size: 11px; font-weight: 700; margin-top: 5px; }
 
 /* tier colors (shared by grid items + filled equip slots) */
 .t2 { border-color: var(--tier2); background: color-mix(in srgb, var(--tier2) 14%, var(--bg-sunk)); }
@@ -529,6 +562,7 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
    ANIMATIONS
    ============================================================ */
 @keyframes shake { 0%, 100% { transform: translateX(-50%); } 25% { transform: translateX(calc(-50% - 6px)); } 75% { transform: translateX(calc(-50% + 6px)); } }
+@keyframes nudge { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-5px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-4px); } 80% { transform: translateX(3px); } }
 @keyframes pulse { from { opacity: 0.55; } to { opacity: 1; } }
 @keyframes bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-3px); } }
 @keyframes fadeout { 0%, 70% { opacity: 1; } 100% { opacity: 0; } }
