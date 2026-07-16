@@ -29,6 +29,10 @@ type DragSource =
   | { kind: 'equip'; slot: EquipSlot; st: ItemStack };
 interface DragState {
   source: DragSource;
+  // 'drag' = hold-move-release. 'carry' = a plain click stuck the item to the
+  // cursor; it travels with the pointer (page tabs stay usable) until the next
+  // click places it, or Esc / right-click / clicking its own cell cancels.
+  mode: 'drag' | 'carry';
   el: HTMLElement;          // the origin tile (dimmed while dragging)
   ghost: HTMLElement | null;
   grabDX: number; grabDY: number; // pointer offset within the tile at grab time
@@ -88,7 +92,7 @@ export class Hud {
   private hiSlot: HTMLElement | null = null; // equip slot currently drop-highlighted
   onAllocateStat: (stat: StatId) => void = () => {};
   onEquip: (index: number) => void = () => {};
-  onUnequip: (slot: EquipSlot) => void = () => {};
+  onUnequip: (slot: EquipSlot, x?: number, y?: number) => void = () => {};
   onMoveItem: (index: number, x: number, y: number) => void = () => {};
   onUseItem: (index: number) => void = () => {};
   onDropItem: (index: number) => void = () => {};
@@ -266,12 +270,14 @@ export class Hud {
   }
 
   toggleInventory(state: GameState): void {
+    if (this.drag?.mode === 'carry') { this.endCarry(); return; } // Tab first releases the carried item
     this.invOpen = !this.invOpen;
     this.els.inventory.classList.toggle('hidden', !this.invOpen);
     if (this.invOpen) this.rebuildInventory(state);
   }
 
   closeInventory(): void {
+    if (this.drag?.mode === 'carry') { this.endCarry(); return; } // Esc/X first releases the carried item
     this.invOpen = false;
     this.els.inventory.classList.add('hidden');
     this.hideTooltip();
@@ -312,10 +318,12 @@ export class Hud {
     this.renderEquipment(state.player);
   }
 
-  /** Switch the visible bag page (tabs I/II/III). Locked during a drag so the
-   *  drop-outline math stays on the page the drag started on. */
+  /** Switch the visible bag page (tabs I/II/III). Allowed while CARRYING an item —
+   *  that is how items travel between pages — but locked during a hold-drag, where
+   *  the pointer is down and the outline math must stay on the origin page. */
   private setInvPage(page: number): void {
-    if (this.drag || page === this.invPage) return;
+    if (page === this.invPage) return;
+    if (this.drag && this.drag.mode !== 'carry') return;
     this.invPage = page;
     if (this.state) this.rebuildInventory(this.state);
   }
@@ -342,6 +350,11 @@ export class Hud {
       const s = itemSize(ITEMS[st.defId]);
       tile.style.gridColumn = `${st.x + 1} / span ${s.w}`;
       tile.style.gridRow = `${st.y - rowOff + 1} / span ${s.h}`;
+      // a carried item keeps its dimmed origin tile across page-switch rebuilds
+      if (this.drag?.mode === 'carry' && this.drag.source.kind === 'grid' && this.drag.source.index === index) {
+        tile.classList.add('dragging-src');
+        this.drag.el = tile; // rebuild replaced the element endCarry() will un-dim
+      }
       tile.addEventListener('dblclick', () => this.tryEquip(index, st, tile));
       tile.addEventListener('contextmenu', (e) => { e.preventDefault(); this.quickAction(tile, index, st); });
       tile.addEventListener('pointerdown', (e) => this.beginDrag(e, tile, { kind: 'grid', index, st }));
@@ -362,6 +375,10 @@ export class Hud {
       if (st) {
         const def = ITEMS[st.defId];
         el.className = `eq-slot filled t${def?.tier ?? 1}`;
+        if (this.drag?.mode === 'carry' && this.drag.source.kind === 'equip' && this.drag.source.slot === slot) {
+          el.classList.add('dragging-src'); // carried worn item stays dimmed across rebuilds
+          this.drag.el = el;
+        }
         el.removeAttribute('title'); // rich hover comes from the custom tooltip now
         el.innerHTML = `<span class="item-icon">${def?.icon ?? '❔'}</span>` +
           (st.plus && st.plus > 0 ? `<span class="plus">+${st.plus}</span>` : '');
@@ -403,7 +420,7 @@ export class Hud {
     const s = itemSize(ITEMS[source.st.defId]);
     const r = el.getBoundingClientRect();
     this.drag = {
-      source, el, ghost: null,
+      source, mode: 'drag', el, ghost: null,
       grabDX: e.clientX - r.left, grabDY: e.clientY - r.top,
       w: s.w, h: s.h, started: false, startX: e.clientX, startY: e.clientY,
       cell: this.cellPx(), gap: this.gapPx(), gridRect: null,
@@ -434,30 +451,88 @@ export class Hud {
     window.removeEventListener('pointermove', this.onDragMove);
     window.removeEventListener('pointerup', this.onDragUp);
     const d = this.drag;
-    this.drag = null;
     if (!d) return;
+    if (!d.started) { this.enterCarry(d); return; } // plain click → item sticks to the cursor
+    this.drag = null;
     this.clearDropFeedback();
     document.body.style.userSelect = '';
     d.ghost?.remove();
     d.el.classList.remove('dragging-src');
-    if (!d.started) return; // was a click, not a drag — leave it to dblclick/right-click
 
     const target = this.resolveDrop(e.clientX, e.clientY, d);
     if (d.source.kind === 'grid') {
       if (target.type === 'equip') this.tryEquipTo(d.source.index, d.source.st, target.slot);
       else if (target.type === 'grid') this.tryMove(d.source, target.x, target.y, d.w, d.h, d.el);
-      else if (this.outsideInventory(e.clientX, e.clientY)) this.onDropItem(d.source.index); // throw to the ground
-      else this.shakeEl(d.el); // dropped on the window but nowhere useful
+      else if (target.type === 'world') this.onDropItem(d.source.index); // throw to the ground
+      else this.shakeEl(d.el); // dropped on some UI but nowhere useful
     } else {
-      if (target.type === 'grid') this.tryUnequip(d.source.slot);
+      if (target.type === 'grid') this.tryUnequip(d.source.slot, target.x, target.y);
       else this.shakeEl(d.el); // can't move a worn item straight to another slot
     }
   };
 
-  /** True when the pointer is off the inventory window entirely (→ drop to ground). */
-  private outsideInventory(px: number, py: number): boolean {
-    const r = this.els.inventory.getBoundingClientRect();
-    return px < r.left || px > r.right || py < r.top || py > r.bottom;
+  // ---- click-to-carry (Metin2-style): click picks the item up, next click places it ----
+
+  /** A click (no hold-move) grabbed the item: keep the drag session alive, show the
+   *  ghost on the cursor, and wait for the next pointerdown to place it. Page tabs
+   *  remain clickable, so this is how items travel between bag pages. */
+  private enterCarry(d: DragState): void {
+    d.mode = 'carry';
+    d.started = true;
+    this.startGhost(d);
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', this.onDragMove);
+    window.addEventListener('pointerdown', this.onCarryDown);
+  }
+
+  /** Placement click while carrying. On an invalid spot the item stays on the
+   *  cursor; clicking its own cell/slot cancels (which also lets dblclick fire). */
+  private onCarryDown = (e: PointerEvent): void => {
+    const d = this.drag;
+    if (!d || d.mode !== 'carry') return;
+    if (e.button !== 0) return; // right-click cancels via quickAction, not here
+    const target = this.resolveDrop(e.clientX, e.clientY, d);
+    const src = d.source;
+    if (src.kind === 'grid') {
+      if (target.type === 'equip') {
+        const v = this.equipValidity(src.index, src.st, target.slot);
+        if (v.ok) { this.endCarry(); this.onEquip(src.index); }
+        else { this.shakeEl(this.slotEl(target.slot)); this.toast(v.reason!); }
+      } else if (target.type === 'grid') {
+        if (target.x === src.st.x && target.y === src.st.y) { this.endCarry(); return; } // back home (dblclick path)
+        const others = this.state!.player.inventory.filter((_, i) => i !== src.index);
+        if (rectFree(others, target.x, target.y, d.w, d.h)) {
+          this.endCarry();
+          this.onMoveItem(src.index, target.x, target.y);
+        } // blocked cell: outline is already red — keep carrying
+      } else if (target.type === 'world') {
+        this.endCarry();
+        this.onDropItem(src.index); // throw to the ground
+      } // window chrome (page tabs, footer…): keep carrying
+    } else {
+      if (target.type === 'grid') {
+        if (rectFree(this.state!.player.inventory, target.x, target.y, d.w, d.h)) {
+          this.endCarry();
+          this.onUnequip(src.slot, target.x, target.y);
+        }
+      } else if (target.type === 'equip' && target.slot === src.slot) {
+        this.endCarry(); // back on its own slot (dblclick-unequip path)
+      } // anything else: keep carrying the worn item
+    }
+  };
+
+  /** Tear down a carry (or cancel it — the item never left its cell, so there is
+   *  nothing to undo beyond the cursor ghost and the dimmed origin tile). */
+  private endCarry(): void {
+    const d = this.drag;
+    if (!d) return;
+    window.removeEventListener('pointermove', this.onDragMove);
+    window.removeEventListener('pointerdown', this.onCarryDown);
+    this.drag = null;
+    this.clearDropFeedback();
+    document.body.style.userSelect = '';
+    d.ghost?.remove();
+    d.el.classList.remove('dragging-src');
   }
 
   private startGhost(d: DragState): void {
@@ -476,11 +551,16 @@ export class Hud {
     d.el.classList.add('dragging-src');
   }
 
-  /** Which drop target the pointer is over: an equip slot, a clamped top-left grid cell, or nothing. */
+  /** Which drop target the pointer is over: an equip slot, a clamped top-left grid
+   *  cell, the open world (canvas → throw to ground), or other UI (nothing). */
   private resolveDrop(px: number, py: number, d: DragState):
-    { type: 'equip'; slot: EquipSlot } | { type: 'grid'; x: number; y: number } | { type: 'none' } {
+    { type: 'equip'; slot: EquipSlot } | { type: 'grid'; x: number; y: number }
+    | { type: 'world' } | { type: 'none' } {
     const el = document.elementFromPoint(px, py) as HTMLElement | null;
     if (!el) return { type: 'none' };
+    // #hud is pointer-events:none, so the bare canvas means the pointer is over
+    // the world itself — not some other panel (stats, bars) floating above it.
+    if (el.id === 'game') return { type: 'world' };
     const slotEl = el.closest('.eq-slot') as HTMLElement | null;
     if (slotEl?.dataset.slot) return { type: 'equip', slot: slotEl.dataset.slot as EquipSlot };
     if (el.closest('#inv-grid')) {
@@ -571,18 +651,27 @@ export class Hud {
     this.onMoveItem(source.index, x, y);
   }
 
-  private tryUnequip(slot: EquipSlot): void {
+  /** Unequip `slot` into the bag — onto (x,y) when the drop targeted a cell,
+   *  else wherever the sim finds room. Pre-checks so the sim never silently no-ops. */
+  private tryUnequip(slot: EquipSlot, x?: number, y?: number): void {
     const st = this.state!.player.equipment[slot];
     if (!st) return;
     const s = itemSize(ITEMS[st.defId]);
-    if (!firstFreeCell(this.state!.player.inventory, s.w, s.h)) {
-      this.shakeEl(this.slotEl(slot)); this.toast('Bag full'); return;
+    const inv = this.state!.player.inventory;
+    const ok = x !== undefined && y !== undefined
+      ? rectFree(inv, x, y, s.w, s.h)
+      : !!firstFreeCell(inv, s.w, s.h);
+    if (!ok) {
+      this.shakeEl(this.slotEl(slot)); this.toast(x !== undefined ? 'No room there' : 'Bag full');
+      return;
     }
-    this.onUnequip(slot);
+    this.onUnequip(slot, x, y);
   }
 
-  /** Right-click a grid item: use a consumable (travel only, decyzja v3-3) or quick-equip gear. */
+  /** Right-click a grid item: use a consumable (travel only, decyzja v3-3) or quick-equip gear.
+   *  While carrying, right-click cancels the carry instead. */
   private quickAction(el: HTMLElement, index: number, st: ItemStack): void {
+    if (this.drag) { this.endCarry(); return; }
     const def = ITEMS[st.defId];
     if (!def) return;
     if (def.consumable) {

@@ -41,7 +41,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
     else if (e.type === 'respawn') respawnPlayer(state);
     else if (e.type === 'allocateStat') allocateStat(state, e.stat);
     else if (e.type === 'equip') equipItem(state, e.index);
-    else if (e.type === 'unequip') unequipItem(state, e.slot);
+    else if (e.type === 'unequip') unequipItem(state, e.slot, e.x, e.y);
     else if (e.type === 'moveItem') moveItem(state, e.index, e.x, e.y);
     else if (e.type === 'useItem') useItem(state, e.index);
     else if (e.type === 'dropItem') dropItem(state, e.index);
@@ -159,14 +159,18 @@ function equipItem(state: GameState, index: number): void {
   state.dirty = true;
 }
 
-/** Move the item in `slot` to the first free grid cell. Silent no-op if the bag has no room. */
-function unequipItem(state: GameState, slot: EquipSlot): void {
+/** Move the item in `slot` into the bag: to (x,y) when given (drop/click on a specific
+ *  cell), else to the first free grid cell. Silent no-op if the target is taken or the
+ *  bag has no room — the UI pre-checks and shows feedback. */
+function unequipItem(state: GameState, slot: EquipSlot, x?: number, y?: number): void {
   const p = state.player;
   const st = p.equipment[slot];
   if (!st) return;
   const us = itemSize(ITEMS[st.defId]);
-  const cell = firstFreeCell(p.inventory, us.w, us.h);
-  if (!cell) return;                            // no room — reject silently
+  const cell = x !== undefined && y !== undefined
+    ? (rectFree(p.inventory, x, y, us.w, us.h) ? { x, y } : null)
+    : firstFreeCell(p.inventory, us.w, us.h);
+  if (!cell) return;                            // no room / target blocked — reject silently
   p.inventory.push({ ...st, x: cell.x, y: cell.y });
   p.equipment[slot] = null;
   clampVitals(p);

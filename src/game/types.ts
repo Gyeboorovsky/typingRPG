@@ -120,7 +120,7 @@ export type InputEvent =
   | { type: 'respawn' }
   | { type: 'allocateStat'; stat: StatId }
   | { type: 'equip'; index: number }         // inventory[index] → its slot
-  | { type: 'unequip'; slot: EquipSlot }     // slot → first free grid cell
+  | { type: 'unequip'; slot: EquipSlot; x?: number; y?: number } // slot → target cell (or first free)
   | { type: 'moveItem'; index: number; x: number; y: number } // grid reposition
   | { type: 'useItem'; index: number }       // consume inventory[index] (travel only)
   | { type: 'dropItem'; index: number };     // throw inventory[index] on the ground

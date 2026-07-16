@@ -46,7 +46,7 @@ async function boot(): Promise<void> {
   input.onCloseInventory = () => { hud.closeInventory(); hud.closeStats(); charSelect.close(); };
   hud.onAllocateStat = (stat) => input.push({ type: 'allocateStat', stat });
   hud.onEquip = (index) => input.push({ type: 'equip', index });
-  hud.onUnequip = (slot) => input.push({ type: 'unequip', slot });
+  hud.onUnequip = (slot, x, y) => input.push({ type: 'unequip', slot, x, y });
   hud.onMoveItem = (index, x, y) => input.push({ type: 'moveItem', index, x, y });
   hud.onUseItem = (index) => input.push({ type: 'useItem', index });
   hud.onDropItem = (index) => input.push({ type: 'dropItem', index });

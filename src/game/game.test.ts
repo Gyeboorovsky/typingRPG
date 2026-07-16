@@ -415,6 +415,26 @@ describe('equipment events', () => {
     expect(s.player.inventory).toHaveLength(INV_W * INV_H);
   });
 
+  it('unequip lands on the targeted cell when x/y are given and free', () => {
+    const s = newGame(1); bare(s);
+    s.player.inventory = [];
+    s.player.equipment.weapon = { defId: 'iron_sword', qty: 1 };
+    update(s, [{ type: 'unequip', slot: 'weapon', x: 4, y: 2 }], SIM_DT);
+    expect(s.player.equipment.weapon).toBeNull();
+    expect(s.player.inventory[0]).toMatchObject({ defId: 'iron_sword', x: 4, y: 2 });
+  });
+
+  it('targeted unequip rejects an occupied or page-crossing cell silently', () => {
+    const s = newGame(1); bare(s);
+    s.player.inventory = [{ defId: 'slime_gel', qty: 1, x: 4, y: 2 }];
+    s.player.equipment.weapon = { defId: 'iron_sword', qty: 1 }; // 1x2
+    update(s, [{ type: 'unequip', slot: 'weapon', x: 4, y: 2 }], SIM_DT);  // blocked by the gel
+    expect(s.player.equipment.weapon).not.toBeNull();
+    update(s, [{ type: 'unequip', slot: 'weapon', x: 0, y: INV_PAGE_H - 1 }], SIM_DT); // crosses the page seam
+    expect(s.player.equipment.weapon).not.toBeNull();
+    expect(s.player.inventory).toHaveLength(1);
+  });
+
   it('moveItem repositions when the footprint is clear', () => {
     const s = newGame(1); bare(s);
     s.player.inventory = [{ defId: 'slime_gel', qty: 1, x: 0, y: 0 }];
