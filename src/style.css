@@ -12,7 +12,11 @@
   --bg-sunk: #131b1f;              /* recessed: bar tracks, slots, inputs */
   --panel: #1a242a;                /* raised panels */
   --panel-top: #232f36;            /* panel header (gradient top) */
-  --glass: rgba(16, 22, 25, 0.82); /* floating HUD panels over the world */
+  /* Floating HUD panels over the world. Near-opaque on purpose: these sit on
+     the always-animating canvas, so they carry NO backdrop-filter (the GPU
+     would re-blur the region every frame). Blur is reserved for rare overlays
+     (#charselect, #death). */
+  --glass: rgba(16, 22, 25, 0.92);
 
   /* borders */
   --border: #2f3f47;
@@ -81,7 +85,6 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--sh-float);
-  backdrop-filter: blur(4px);
 }
 /* chunky beveled button recipes (composed by component rules below) */
 .btn {
@@ -113,7 +116,6 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--sh-float);
-  backdrop-filter: blur(4px);
 }
 .bar {
   position: relative; height: 16px;
@@ -176,7 +178,6 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   border: 1px solid var(--boss);
   border-radius: var(--r-lg);
   box-shadow: var(--sh-float), 0 0 24px rgba(176, 74, 216, 0.28);
-  backdrop-filter: blur(4px);
 }
 #boss-name { font-weight: 900; font-size: 15px; letter-spacing: 0.02em; text-shadow: 0 1px 3px #000; }
 .bar.boss { height: 16px; margin-top: 6px; border-color: var(--boss-b); }
@@ -194,7 +195,6 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--sh-float);
-  backdrop-filter: blur(4px);
 }
 #prompt { font-family: var(--mono); font-size: clamp(18px, 3vw, 28px); font-weight: 700; letter-spacing: 1px; white-space: pre-wrap; }
 #p-done { color: var(--acc); text-shadow: 0 0 8px rgba(62, 201, 138, 0.4); }
@@ -217,7 +217,6 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   border-radius: var(--r-sm);
   padding: 6px 12px; font-size: 13px; font-weight: 800;
   box-shadow: var(--sh-panel);
-  backdrop-filter: blur(4px);
   animation: fadeout 2.5s forwards;
 }
 
