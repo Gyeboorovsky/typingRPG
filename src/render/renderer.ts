@@ -5,7 +5,7 @@ import { BOSS_ENRAGE_HP, CAMERA_LERP, TILE_H, TILE_W } from '../game/constants';
 import { ITEMS } from '../game/items';
 import { PROPS } from '../game/map';
 import { MOBS } from '../game/mobs';
-import type { Fx, GameState, Vec2 } from '../game/types';
+import type { Fx, GameState, GroundDrop, Mob, Vec2 } from '../game/types';
 import { lerp, playerWorldPos } from '../game/types';
 import { PAL } from './palette';
 import {
@@ -20,6 +20,11 @@ const SQ2 = Math.SQRT2;
 
 interface Particle { wx: number; wy: number; text: string; color: string; born: number }
 interface Burst { wx: number; wy: number; r: number; color: string; born: number }
+// Depth-sort entry: plain data + a kind tag (drawn via switch), no per-frame closures.
+interface Ent {
+  d: number; kind: 'tree' | 'rock' | 'drop' | 'mob' | 'player';
+  sx: number; sy: number; ref: GroundDrop | Mob | null;
+}
 
 const projX = (wx: number, wy: number): number => (wx - wy) * IX;
 const projY = (wx: number, wy: number): number => (wx + wy) * IY;
@@ -30,6 +35,7 @@ export class Renderer {
   private particles: Particle[] = [];
   private bursts: Burst[] = [];
   private terrain: TerrainLayer | null = null; // static ground, built lazily
+  private ents: Ent[] = []; // reused across frames (cleared, not reallocated)
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
@@ -80,41 +86,53 @@ export class Renderer {
       ctx.lineWidth = 1;
     }
 
-    // entity pass: props + mobs + drops + player, depth-sorted by x+y
-    type Ent = { d: number; draw: () => void };
-    const ents: Ent[] = [];
+    // entity pass: props + mobs + drops + player, depth-sorted by x+y.
+    // Push order matches insertion order and the sort is stable, so draw
+    // order is identical to the old closure-based pass.
+    const ents = this.ents;
+    ents.length = 0;
     for (const pr of PROPS) {
       const sx = projX(pr.x, pr.y) - cx, sy = projY(pr.x, pr.y) - cy;
       if (sx < -80 || sx > viewW + 80 || sy < -100 || sy > viewH + 100) continue;
-      ents.push({ d: pr.x + pr.y, draw: pr.kind === 'tree' ? () => drawTree(ctx, sx, sy) : () => drawRock(ctx, sx, sy) });
+      ents.push({ d: pr.x + pr.y, kind: pr.kind, sx, sy, ref: null });
     }
     for (const dr of state.drops) {
       const sx = projX(dr.pos.x, dr.pos.y) - cx, sy = projY(dr.pos.x, dr.pos.y) - cy;
       if (sx < -80 || sx > viewW + 80 || sy < -100 || sy > viewH + 100) continue;
-      ents.push({ d: dr.pos.x + dr.pos.y, draw: () => drawDrop(ctx, sx, sy, t, ITEMS[dr.defId].tier, dr.id) });
+      ents.push({ d: dr.pos.x + dr.pos.y, kind: 'drop', sx, sy, ref: dr });
     }
     for (const m of state.mobs) {
-      const def = MOBS[m.defId];
       const sx = projX(m.pos.x, m.pos.y) - cx, sy = projY(m.pos.x, m.pos.y) - cy;
       if (sx < -100 || sx > viewW + 100 || sy < -140 || sy > viewH + 140) continue;
-      ents.push({
-        d: m.pos.x + m.pos.y,
-        draw: () => {
-          if (def.boss) drawBoss(ctx, sx, sy, t, m.hp <= def.hp * BOSS_ENRAGE_HP, m.shield);
-          else if (m.defId === 'slime') drawSlime(ctx, sx, sy, t, m.id);
-          else if (m.defId === 'boar') drawBoar(ctx, sx, sy, t, m.id);
-          else drawCultist(ctx, sx, sy, t, m.id);
-          if (m.hp < def.hp) this.mobBar(sx, sy - (def.boss ? 80 : 40), m.hp / def.hp);
-        },
-      });
+      ents.push({ d: m.pos.x + m.pos.y, kind: 'mob', sx, sy, ref: m });
     }
-    {
-      const p = state.player;
-      const sx = projX(pp.x, pp.y) - cx, sy = projY(pp.x, pp.y) - cy;
-      ents.push({ d: pp.x + pp.y, draw: () => drawPlayer(ctx, sx, sy, t, p.dir, state.held.length > 0, p.animT, p.dead, p.classId) });
-    }
+    ents.push({ d: pp.x + pp.y, kind: 'player', sx: projX(pp.x, pp.y) - cx, sy: projY(pp.x, pp.y) - cy, ref: null });
     ents.sort((a, b) => a.d - b.d);
-    for (const e of ents) e.draw();
+    const p = state.player;
+    for (const e of ents) {
+      switch (e.kind) {
+        case 'tree': drawTree(ctx, e.sx, e.sy); break;
+        case 'rock': drawRock(ctx, e.sx, e.sy); break;
+        case 'drop': {
+          const dr = e.ref as GroundDrop;
+          drawDrop(ctx, e.sx, e.sy, t, ITEMS[dr.defId].tier, dr.id);
+          break;
+        }
+        case 'mob': {
+          const m = e.ref as Mob;
+          const def = MOBS[m.defId];
+          if (def.boss) drawBoss(ctx, e.sx, e.sy, t, m.hp <= def.hp * BOSS_ENRAGE_HP, m.shield);
+          else if (m.defId === 'slime') drawSlime(ctx, e.sx, e.sy, t, m.id);
+          else if (m.defId === 'boar') drawBoar(ctx, e.sx, e.sy, t, m.id);
+          else drawCultist(ctx, e.sx, e.sy, t, m.id);
+          if (m.hp < def.hp) this.mobBar(e.sx, e.sy - (def.boss ? 80 : 40), m.hp / def.hp);
+          break;
+        }
+        case 'player':
+          drawPlayer(ctx, e.sx, e.sy, t, p.dir, state.held.length > 0, p.animT, p.dead, p.classId);
+          break;
+      }
+    }
 
     this.drawParticles(t, cx, cy);
   }
@@ -145,7 +163,9 @@ export class Renderer {
     const ctx = this.ctx;
     ctx.font = 'bold 14px system-ui, sans-serif';
     ctx.textAlign = 'center';
-    this.particles = this.particles.filter((p) => t - p.born < 0.8);
+    let n = 0; // expire in place — no new arrays per frame
+    for (const p of this.particles) if (t - p.born < 0.8) this.particles[n++] = p;
+    this.particles.length = n;
     for (const p of this.particles) {
       const age = t - p.born;
       const sx = projX(p.wx, p.wy) - cx;
@@ -154,7 +174,9 @@ export class Renderer {
       ctx.fillStyle = p.color;
       ctx.fillText(p.text, sx, sy);
     }
-    this.bursts = this.bursts.filter((b) => t - b.born < 0.45);
+    n = 0;
+    for (const b of this.bursts) if (t - b.born < 0.45) this.bursts[n++] = b;
+    this.bursts.length = n;
     for (const b of this.bursts) {
       const age = (t - b.born) / 0.45;
       const sx = projX(b.wx, b.wy) - cx, sy = projY(b.wx, b.wy) - cy;
