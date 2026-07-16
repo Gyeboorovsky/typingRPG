@@ -4,8 +4,8 @@
 //
 // Control modes (see GameState.mode):
 //   travel — WSAD/arrows move; `i`/`c` toggle windows; digits/Space enter fight; nothing types.
-//   fight  — printable chars feed the typing resolver; movement does nothing; backtick,
-//            Backspace or Esc return to travel; Alt+digit picks the bow fire mode without typing.
+//   fight  — printable chars feed the typing resolver; movement does nothing; backtick or Esc
+//            return to travel; Alt+digit picks the bow fire mode without typing.
 import type { Dir, InputEvent, Mode } from './game/types';
 
 // Movement keys, keyed by e.code so they're layout- and case-independent (WSAD + arrows).
@@ -85,7 +85,9 @@ function routeFight(base: KeyRoute, info: KeyInfo): KeyRoute {
     const digit = fireDigit(info.code);
     if (digit !== null) return { ...base, preventDefault: true, events: [{ type: 'setFireMode', fireMode: digit }] };
   }
-  if (info.key === 'Backspace') return { ...base, preventDefault: true, mode: 'travel', events: [{ type: 'setMode', mode: 'travel' }] };
+  // Backspace is inert in fight: the resolver advances only on correct chars, so there's no
+  // wrong-char buffer to erase — and binding it to "exit" clashes with its delete-a-letter feel.
+  if (info.key === 'Backspace') return { ...base, preventDefault: true };
   // Arrow keys neither move nor type in fight — swallow them so the page doesn't scroll.
   if (DIR_CODES[info.code] !== undefined && info.code.startsWith('Arrow')) return { ...base, preventDefault: true };
   if (isPrintable(info)) return { ...base, preventDefault: true, events: [{ type: 'char', ch: info.key }] };

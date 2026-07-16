@@ -616,12 +616,16 @@ describe('routeKeydown (pure keystroke router)', () => {
     expect(r.mode).toBe('fight');
   });
 
-  it('fight: Backspace and Esc exit to travel', () => {
-    for (const info of [k({ code: 'Backspace', key: 'Backspace' }), k({ code: 'Escape', key: 'Escape' })]) {
-      const r = routeKeydown('fight', false, info);
-      expect(r.mode).toBe('travel');
-      expect(r.events).toEqual([{ type: 'setMode', mode: 'travel' }]);
-    }
+  it('fight: Esc exits to travel', () => {
+    const r = routeKeydown('fight', false, k({ code: 'Escape', key: 'Escape' }));
+    expect(r.mode).toBe('travel');
+    expect(r.events).toEqual([{ type: 'setMode', mode: 'travel' }]);
+  });
+
+  it('fight: Backspace is inert — it does not exit fight (no delete-buffer to erase)', () => {
+    const r = routeKeydown('fight', false, k({ code: 'Backspace', key: 'Backspace' }));
+    expect(r.mode).toBe('fight');
+    expect(r.events).toEqual([]);
   });
 
   it('fight: Esc closes an open window before it exits fight', () => {
