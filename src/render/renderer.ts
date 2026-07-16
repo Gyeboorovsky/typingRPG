@@ -3,14 +3,17 @@
 import { radiusFor } from '../game/combat';
 import { BOSS_ENRAGE_HP, CAMERA_LERP, TILE_H, TILE_W } from '../game/constants';
 import { ITEMS } from '../game/items';
-import { MAP_H, MAP_W, PROPS, terrainAt } from '../game/map';
+import { PROPS } from '../game/map';
 import { MOBS } from '../game/mobs';
 import type { Fx, GameState, Vec2 } from '../game/types';
 import { lerp, playerWorldPos } from '../game/types';
 import { PAL } from './palette';
 import {
-  drawBoar, drawBoss, drawCultist, drawDrop, drawPlayer, drawRock, drawSlime, drawTile, drawTree,
+  drawBoar, drawBoss, drawCultist, drawDrop, drawPlayer, drawRock, drawSlime, drawTree,
+  drawWaterShimmer,
 } from './sprites';
+import { buildTerrain } from './terrain';
+import type { TerrainLayer } from './terrain';
 
 const IX = TILE_W / 2, IY = TILE_H / 2; // 32, 16
 const SQ2 = Math.SQRT2;
@@ -26,6 +29,7 @@ export class Renderer {
   private camInit = false;
   private particles: Particle[] = [];
   private bursts: Burst[] = [];
+  private terrain: TerrainLayer | null = null; // static ground, built lazily
 
   constructor(private ctx: CanvasRenderingContext2D) {}
 
@@ -48,13 +52,18 @@ export class Renderer {
 
     ctx.clearRect(0, 0, viewW, viewH);
 
-    // ground pass (y-outer/x-inner is naturally back-to-front)
-    for (let y = 0; y < MAP_H; y++) {
-      for (let x = 0; x < MAP_W; x++) {
-        const sx = projX(x, y) - cx, sy = projY(x, y) - cy;
-        if (sx < -TILE_W || sx > viewW + TILE_W || sy < -TILE_H * 2 || sy > viewH + TILE_H * 2) continue;
-        drawTile(ctx, sx, sy, terrainAt(x, y), x, y, t);
-      }
+    // ground pass: one blit of the pre-rendered terrain layer, then the
+    // animated water shimmer on top. Rebuild only if devicePixelRatio changed
+    // (browser zoom / monitor move) — the layer is map-sized, not view-sized.
+    if (!this.terrain || this.terrain.builtForDpr !== (window.devicePixelRatio || 1))
+      this.terrain = buildTerrain();
+    const ter = this.terrain;
+    ctx.drawImage(ter.canvas, 0, 0, ter.canvas.width, ter.canvas.height,
+      -ter.ox - cx, -ter.oy - cy, ter.w, ter.h);
+    for (const wt of ter.waterTiles) {
+      const sx = projX(wt.x, wt.y) - cx, sy = projY(wt.x, wt.y) - cy;
+      if (sx < -TILE_W || sx > viewW + TILE_W || sy < -TILE_H * 2 || sy > viewH + TILE_H * 2) continue;
+      drawWaterShimmer(ctx, sx, sy, wt.x, wt.y, t);
     }
 
     // streak damage-radius ring, between ground and entities

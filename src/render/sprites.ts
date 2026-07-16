@@ -16,9 +16,11 @@ function diamond(ctx: CanvasRenderingContext2D, sx: number, sy: number, w = HW, 
   ctx.closePath();
 }
 
-export function drawTile(
+/** Static part of a ground tile (fill + edge). Drawn once into the offscreen
+ *  terrain layer, not per frame — the animated shimmer stays separate below. */
+export function drawTileBase(
   ctx: CanvasRenderingContext2D, sx: number, sy: number,
-  terrain: number, x: number, y: number, t: number,
+  terrain: number, x: number, y: number,
 ): void {
   const alt = (x + y) % 2 === 0;
   let fill = alt ? PAL.grassA : PAL.grassB;
@@ -29,12 +31,16 @@ export function drawTile(
   ctx.fill();
   ctx.strokeStyle = PAL.tileEdge;
   ctx.stroke();
-  if (terrain === 2) { // gentle shimmer
-    const s = 0.45 + 0.15 * Math.sin(t * 2 + (x + y) * 0.9);
-    diamond(ctx, sx, sy, HW * s, HH * s);
-    ctx.fillStyle = PAL.waterB;
-    ctx.fill();
-  }
+}
+
+/** Gentle animated shimmer on a water tile, drawn per frame over the terrain layer. */
+export function drawWaterShimmer(
+  ctx: CanvasRenderingContext2D, sx: number, sy: number, x: number, y: number, t: number,
+): void {
+  const s = 0.45 + 0.15 * Math.sin(t * 2 + (x + y) * 0.9);
+  diamond(ctx, sx, sy, HW * s, HH * s);
+  ctx.fillStyle = PAL.waterB;
+  ctx.fill();
 }
 
 export function drawShadow(ctx: CanvasRenderingContext2D, sx: number, sy: number, rx: number): void {
