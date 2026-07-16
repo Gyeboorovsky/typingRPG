@@ -188,26 +188,32 @@ export const ITEMS: Record<string, ItemDef> = {
 export const itemSize = (def: ItemDef | undefined): { w: number; h: number } =>
   def?.size ?? { w: 1, h: 1 };
 
+// Reusable occupancy scratch for firstFreeCell — it runs per nearby drop every
+// tick (via stepDrops → addToInventory), so no per-call allocation. Fully
+// rewritten before each read; single-threaded, non-reentrant, so one buffer is
+// safe even for a future server tick handling many players sequentially.
+const occ = new Uint8Array(INV_W * INV_H);
+
 /** First row-major top-left cell where a w×h footprint fits among already-placed
  *  items, or null if the INV_W×INV_H grid has no room. Occupancy is rebuilt from
  *  each placed item's own size, so multi-cell items block the cells they span. */
 export function firstFreeCell(
   placed: { defId: string; x: number; y: number }[], w: number, h: number,
 ): { x: number; y: number } | null {
-  const occ: boolean[][] = Array.from({ length: INV_H }, () => new Array(INV_W).fill(false));
+  occ.fill(0);
   for (const it of placed) {
     const s = itemSize(ITEMS[it.defId]);
     for (let dy = 0; dy < s.h; dy++)
       for (let dx = 0; dx < s.w; dx++) {
         const gy = it.y + dy, gx = it.x + dx;
-        if (gy >= 0 && gy < INV_H && gx >= 0 && gx < INV_W) occ[gy][gx] = true;
+        if (gy >= 0 && gy < INV_H && gx >= 0 && gx < INV_W) occ[gy * INV_W + gx] = 1;
       }
   }
   for (let y = 0; y + h <= INV_H; y++)
     for (let x = 0; x + w <= INV_W; x++) {
       let free = true;
       for (let dy = 0; dy < h && free; dy++)
-        for (let dx = 0; dx < w; dx++) if (occ[y + dy][x + dx]) { free = false; break; }
+        for (let dx = 0; dx < w; dx++) if (occ[(y + dy) * INV_W + x + dx]) { free = false; break; }
       if (free) return { x, y };
     }
   return null;
