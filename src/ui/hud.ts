@@ -276,11 +276,21 @@ export class Hud {
     if (this.invOpen) this.rebuildInventory(state);
   }
 
+  /** Is any HUD window open (inventory / character) or an item mid-carry? Drives Esc precedence:
+   *  Esc closes the window before it exits fight mode. */
+  anyWindowOpen(): boolean {
+    return this.invOpen || this.statsOpen || this.drag?.mode === 'carry';
+  }
+
   closeInventory(): void {
     if (this.drag?.mode === 'carry') { this.endCarry(); return; } // Esc/X first releases the carried item
     this.invOpen = false;
     this.els.inventory.classList.add('hidden');
     this.hideTooltip();
+  }
+
+  toggleStats(): void {
+    this.statsOpen ? this.closeStats() : this.openStats();
   }
 
   openStats(): void {

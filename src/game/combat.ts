@@ -37,6 +37,7 @@ const aggroed = (state: GameState): Mob[] => state.mobs.filter((m) => m.state ==
 /** Per-tick combat lifecycle: start when mobs engage, end when none remain.
  *  Single pass over mobs — this runs every tick, so no array is allocated. */
 export function syncCombat(state: GameState): void {
+  if (state.mode !== 'fight') { state.combat = null; return; } // prompt shows only in fight mode
   let tier = 0;
   for (const m of state.mobs)
     if (m.state === 'aggro' && MOBS[m.defId].tier > tier) tier = MOBS[m.defId].tier;

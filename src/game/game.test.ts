@@ -21,10 +21,13 @@ import { EQUIP_SLOTS } from './types';
 import { rand } from './rng';
 import { applySave, makeSave, newGame, update } from './sim';
 import type { ClassId, GameState, Mob, SaveData, Vec2 } from './types';
+import { routeKeydown } from '../input';
+import type { KeyInfo } from '../input';
 
 /** A controlled state: player at spawn, exactly these mobs, combat synced. */
 function stateWith(mobs: { defId: string; pos: Vec2; hp?: number; shield?: boolean; shieldsUsed?: number }[]): GameState {
   const s = newGame(42);
+  s.mode = 'fight'; // the combat tests exercise the typing prompt, which shows only in fight
   s.mobs = mobs.map((m, i): Mob => ({
     id: i + 1, defId: m.defId, pos: { ...m.pos }, hp: m.hp ?? MOBS[m.defId].hp,
     state: 'aggro', spotIdx: 0, home: { ...m.pos },
@@ -561,5 +564,117 @@ describe('arrowsPerCharsInterval derivation (bow tempo helper)', () => {
     expect(arrowsPerCharsInterval(s.player)).toBe(3);
     s.player.stats = { ...emptyStats(), DEX: 10000 };
     expect(arrowsPerCharsInterval(s.player)).toBe(2);
+  });
+});
+
+describe('routeKeydown (pure keystroke router)', () => {
+  const k = (over: Partial<KeyInfo> & { code: string }): KeyInfo =>
+    ({ key: '', altKey: false, ctrlKey: false, metaKey: false, ...over });
+
+  it('travel: a digit enters fight and selects that fire mode', () => {
+    const r = routeKeydown('travel', false, k({ code: 'Digit2', key: '2' }));
+    expect(r.mode).toBe('fight');
+    expect(r.clearHeld).toBe(true);
+    expect(r.events).toEqual([{ type: 'setMode', mode: 'fight' }, { type: 'setFireMode', fireMode: 2 }]);
+    expect(r.events.some((e) => e.type === 'char')).toBe(false);
+  });
+
+  it('travel: Space enters fight with fire mode 1', () => {
+    const r = routeKeydown('travel', false, k({ code: 'Space', key: ' ' }));
+    expect(r.mode).toBe('fight');
+    expect(r.events).toEqual([{ type: 'setMode', mode: 'fight' }, { type: 'setFireMode', fireMode: 1 }]);
+  });
+
+  it('travel: WSAD/arrows are movement, other printables are inert (no typing)', () => {
+    expect(routeKeydown('travel', false, k({ code: 'KeyW', key: 'w' })).movePress).toBe(0);
+    expect(routeKeydown('travel', false, k({ code: 'ArrowLeft' })).movePress).toBe(3);
+    const q = routeKeydown('travel', false, k({ code: 'KeyQ', key: 'q' }));
+    expect(q.movePress).toBeNull();
+    expect(q.events).toEqual([]); // letters don't type in travel
+  });
+
+  it('travel: i/c toggle windows without typing', () => {
+    expect(routeKeydown('travel', false, k({ code: 'KeyI', key: 'i' })).ui).toBe('toggleInventory');
+    expect(routeKeydown('travel', false, k({ code: 'KeyC', key: 'c' })).ui).toBe('toggleCharacter');
+  });
+
+  it('fight: Space types a space', () => {
+    const r = routeKeydown('fight', false, k({ code: 'Space', key: ' ' }));
+    expect(r.mode).toBe('fight');
+    expect(r.preventDefault).toBe(true);
+    expect(r.events).toEqual([{ type: 'char', ch: ' ' }]);
+  });
+
+  it('fight: a plain digit types (prompts may contain them)', () => {
+    expect(routeKeydown('fight', false, k({ code: 'Digit2', key: '2' })).events).toEqual([{ type: 'char', ch: '2' }]);
+  });
+
+  it('fight: Alt+digit selects the fire mode and does NOT type', () => {
+    const r = routeKeydown('fight', false, k({ code: 'Digit3', key: '3', altKey: true }));
+    expect(r.events).toEqual([{ type: 'setFireMode', fireMode: 3 }]);
+    expect(r.events.some((e) => e.type === 'char')).toBe(false);
+    expect(r.mode).toBe('fight');
+  });
+
+  it('fight: Backspace and Esc exit to travel', () => {
+    for (const info of [k({ code: 'Backspace', key: 'Backspace' }), k({ code: 'Escape', key: 'Escape' })]) {
+      const r = routeKeydown('fight', false, info);
+      expect(r.mode).toBe('travel');
+      expect(r.events).toEqual([{ type: 'setMode', mode: 'travel' }]);
+    }
+  });
+
+  it('fight: Esc closes an open window before it exits fight', () => {
+    const r = routeKeydown('fight', true, k({ code: 'Escape', key: 'Escape' }));
+    expect(r.ui).toBe('closeWindows');
+    expect(r.mode).toBe('fight'); // still in fight — a second Esc (no window) exits
+    expect(r.events).toEqual([]);
+  });
+
+  it('backtick returns to travel from fight without typing', () => {
+    const r = routeKeydown('fight', false, k({ code: 'Backquote', key: '`' }));
+    expect(r.mode).toBe('travel');
+    expect(r.events).toEqual([{ type: 'setMode', mode: 'travel' }]);
+  });
+});
+
+describe('control modes (travel / fight)', () => {
+  it('typing does nothing in travel — no prompt, no damage', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]); // stateWith puts us in fight
+    s.mode = 'travel';
+    syncCombat(s);
+    expect(s.combat).toBeNull();
+    const hp0 = s.mobs[0].hp;
+    resolveKeystroke(s, 'a');
+    expect(s.mobs[0].hp).toBe(hp0); // inert
+  });
+
+  it('entering fight builds the prompt; leaving hides it but keeps aggro', () => {
+    const s = newGame(1);
+    s.mobs = [{
+      id: 1, defId: 'slime', pos: { ...NEAR }, hp: MOBS.slime.hp,
+      state: 'aggro', spotIdx: 0, home: { ...NEAR }, shield: false, shieldsUsed: 0,
+    }];
+    update(s, [{ type: 'setMode', mode: 'fight' }], SIM_DT);
+    expect(s.mode).toBe('fight');
+    expect(s.combat).not.toBeNull();
+    update(s, [{ type: 'setMode', mode: 'travel' }], SIM_DT);
+    expect(s.combat).toBeNull();
+    expect(s.mobs[0].state).toBe('aggro'); // aggro persists across the boundary
+  });
+
+  it('setFireMode records the selected mode', () => {
+    const s = newGame(1);
+    update(s, [{ type: 'setFireMode', fireMode: 3 }], SIM_DT);
+    expect(s.fireMode).toBe(3);
+  });
+
+  it('movement is gated to travel — held keys do not move in fight', () => {
+    const s = newGame(1); s.mobs = [];
+    s.mode = 'fight';
+    const start = { ...s.player.pos };
+    update(s, [{ type: 'move', dirs: [0] }], SIM_DT);
+    for (let i = 0; i < 20; i++) update(s, [], SIM_DT);
+    expect(s.player.pos).toEqual(start); // stayed put while typing
   });
 });

@@ -113,9 +113,13 @@ export type Fx =
   | { kind: 'shieldbreak'; pos: Vec2 }
   | { kind: 'death' };
 
+export type Mode = 'travel' | 'fight';
+
 export type InputEvent =
   | { type: 'char'; ch: string }
   | { type: 'move'; dirs: Dir[] } // currently held dirs, newest last
+  | { type: 'setMode'; mode: Mode }        // travel ↔ fight (typing prompt shows only in fight)
+  | { type: 'setFireMode'; fireMode: number } // bow fire mode (1..4); behavior wired later
   | { type: 'ult' }
   | { type: 'respawn' }
   | { type: 'allocateStat'; stat: StatId }
@@ -138,6 +142,8 @@ export interface GameState {
   drops: GroundDrop[];
   spots: SpotState[];
   combat: CombatState | null;
+  mode: Mode;   // travel = free movement, no prompt; fight = typing-combat prompt shown
+  fireMode: number; // selected bow fire mode (1..4); behavior wired later. Transient (not saved).
   held: Dir[]; // held movement keys, newest last
   fx: Fx[];
   bossKilled: boolean;

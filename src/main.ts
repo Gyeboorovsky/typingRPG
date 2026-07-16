@@ -41,9 +41,11 @@ async function boot(): Promise<void> {
   const renderer = new Renderer(ctx);
   const charSelect = new CharSelect();
 
-  input.combatActive = () => !blocked && state.combat !== null;
+  input.enabled = () => !blocked;
+  input.windowOpen = () => hud.anyWindowOpen();
   input.onToggleInventory = () => { if (!blocked) hud.toggleInventory(state); };
-  input.onCloseInventory = () => { hud.closeInventory(); hud.closeStats(); charSelect.close(); };
+  input.onToggleCharacter = () => { if (!blocked) hud.toggleStats(); };
+  input.onCloseWindows = () => { hud.closeInventory(); hud.closeStats(); charSelect.close(); };
   hud.onAllocateStat = (stat) => input.push({ type: 'allocateStat', stat });
   hud.onEquip = (index) => input.push({ type: 'equip', index });
   hud.onUnequip = (slot, x, y) => input.push({ type: 'unequip', slot, x, y });
@@ -69,6 +71,7 @@ async function boot(): Promise<void> {
       void saver.saveNow(fresh);
     }
     Object.assign(state, fresh);
+    input.forceTravel(); // a freshly loaded character starts in travel
     renderer.resetCamera();
     charSelect.setActiveSlot(slot);
     charSelect.closable = true;
@@ -118,6 +121,8 @@ async function boot(): Promise<void> {
       acc -= STEP_MS;
     }
     if (steps === 5) acc = 0; // spiral-of-death guard
+    // A hero killed mid-fight must not stay in fight mode, or they can't move after respawn.
+    if (!blocked && state.player.dead) input.forceTravel();
     const fx = state.fx;
     state.fx = [];
     if (!blocked) {
@@ -135,6 +140,7 @@ async function boot(): Promise<void> {
       __game: {
         state, saver,
         feedKeys: (s: string) => { for (const ch of s) input.push({ type: 'char', ch }); },
+        setMode: (mode: 'travel' | 'fight') => input.push({ type: 'setMode', mode }),
         press: (t: 'ult' | 'respawn') => input.push({ type: t }),
         move: (dirs: number[]) => input.push({ type: 'move', dirs: dirs as never }),
         step: (n: number) => { for (let i = 0; i < n; i++) update(state, input.drain(), SIM_DT); },

@@ -24,7 +24,7 @@ export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior
       dead: false, ultCooldown: 0, animT: 0,
     },
     mobs: [], drops: [], spots: SPOTS.map(() => ({ pending: [] })),
-    combat: null, held: [], fx: [], bossKilled: false, dirty: false, nextId: 1,
+    combat: null, mode: 'travel', fireMode: 1, held: [], fx: [], bossKilled: false, dirty: false, nextId: 1,
   };
   state.player.hp = maxHp(state.player);
   state.player.mp = maxMp(state.player);
@@ -36,6 +36,8 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
   state.tick++;
   for (const e of events) {
     if (e.type === 'move') state.held = e.dirs;
+    else if (e.type === 'setMode') setMode(state, e.mode);
+    else if (e.type === 'setFireMode') state.fireMode = e.fireMode;
     else if (e.type === 'char') resolveKeystroke(state, e.ch);
     else if (e.type === 'ult') tryUltimate(state);
     else if (e.type === 'respawn') respawnPlayer(state);
@@ -58,10 +60,21 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
   regen(state, dt);
 }
 
-/** Free continuous movement: held keys sum to a direction vector (diagonals included). */
+/** Enter/leave typing-combat. Entering fight builds the prompt now (via syncCombat) so
+ *  keystrokes queued in the same event batch land; leaving hides it immediately. Aggro is
+ *  untouched either way — mobs keep chasing/attacking regardless of the player's mode. */
+function setMode(state: GameState, mode: GameState['mode']): void {
+  state.mode = mode;
+  if (mode === 'fight') syncCombat(state);
+  else state.combat = null;
+}
+
+/** Free continuous movement: held keys sum to a direction vector (diagonals included).
+ *  Effective only in travel mode — in fight you're typing, not walking. */
 function stepPlayer(state: GameState, dt: number): void {
   const p = state.player;
   if (p.dead) return;
+  if (state.mode !== 'travel') return;
   if (state.held.length === 0) return;
   let vx = 0, vy = 0;
   for (const d of state.held) { vx += DIR_VECS[d].x; vy += DIR_VECS[d].y; }
