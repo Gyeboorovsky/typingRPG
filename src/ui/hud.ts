@@ -35,6 +35,10 @@ interface DragState {
   w: number; h: number;    // footprint in cells
   started: boolean;        // crossed the move threshold → real drag, not a click
   startX: number; startY: number;
+  // Cached once per drag so pointermove never forces a style recalc/layout.
+  // (Resizing the window mid-drag offsets the outline until the next drag.)
+  cell: number; gap: number;      // grid cell/gap px (getComputedStyle at grab)
+  gridRect: DOMRect | null;       // inv-grid bounds, captured when the drag starts
 }
 
 // Faded placeholder glyph + label shown in an empty paperdoll slot.
@@ -73,6 +77,11 @@ export class Hud {
   private state: GameState | null = null; // latest synced state, read by drag/right-click/tooltip
   private drag: DragState | null = null;
   private tip: HTMLElement;               // custom hover tooltip (appended to <body>)
+  // Tooltip render cache: rebuild innerHTML + measure only when the hovered
+  // stack (or its qty — pickups can grow it mid-hover) changes, not per move.
+  private tipStack: ItemStack | null = null;
+  private tipQty = 0;
+  private tipW = 0; private tipH = 0;
   private outline: HTMLElement;           // drop-target footprint indicator inside the grid
   private hiSlot: HTMLElement | null = null; // equip slot currently drop-highlighted
   onAllocateStat: (stat: StatId) => void = () => {};
@@ -375,6 +384,7 @@ export class Hud {
       source, el, ghost: null,
       grabDX: e.clientX - r.left, grabDY: e.clientY - r.top,
       w: s.w, h: s.h, started: false, startX: e.clientX, startY: e.clientY,
+      cell: this.cellPx(), gap: this.gapPx(), gridRect: null,
     };
     this.hideTooltip();
     window.addEventListener('pointermove', this.onDragMove);
@@ -422,7 +432,8 @@ export class Hud {
   };
 
   private startGhost(d: DragState): void {
-    const cell = this.cellPx(), gap = this.gapPx();
+    const cell = d.cell, gap = d.gap;
+    d.gridRect = this.els.invGrid.getBoundingClientRect();
     const g = d.el.cloneNode(true) as HTMLElement;
     g.classList.add('drag-ghost');
     g.classList.remove('dragging-src', 'drop-ok', 'drop-bad');
@@ -444,8 +455,8 @@ export class Hud {
     const slotEl = el.closest('.eq-slot') as HTMLElement | null;
     if (slotEl?.dataset.slot) return { type: 'equip', slot: slotEl.dataset.slot as EquipSlot };
     if (el.closest('#inv-grid')) {
-      const r = this.els.invGrid.getBoundingClientRect();
-      const pitch = this.cellPx() + this.gapPx();
+      const r = d.gridRect ?? this.els.invGrid.getBoundingClientRect();
+      const pitch = d.cell + d.gap;
       const gx = Math.max(0, Math.min(INV_W - d.w, Math.round((px - d.grabDX - r.left) / pitch)));
       const gy = Math.max(0, Math.min(INV_H - d.h, Math.round((py - d.grabDY - r.top) / pitch)));
       return { type: 'grid', x: gx, y: gy };
@@ -480,7 +491,7 @@ export class Hud {
   }
 
   private showOutline(x: number, y: number, w: number, h: number, ok: boolean): void {
-    const cell = this.cellPx(), gap = this.gapPx();
+    const cell = this.drag?.cell ?? this.cellPx(), gap = this.drag?.gap ?? this.gapPx();
     const o = this.outline;
     o.classList.remove('hidden');
     o.classList.toggle('bad', !ok);
@@ -563,32 +574,42 @@ export class Hud {
   // ---- hover tooltip ----
 
   private showItemTip(e: PointerEvent, st: ItemStack): void {
-    if (this.drag) return;
-    this.tip.innerHTML = this.tooltipHtml(st);
-    this.tip.classList.remove('hidden');
-    this.positionTip(e.clientX, e.clientY);
+    if (!this.drag) this.showTip(e, st);
   }
 
   private showSlotTip(e: PointerEvent, slot: EquipSlot): void {
     if (this.drag) return;
     const st = this.state?.player.equipment[slot];
     if (!st) { this.hideTooltip(); return; }
-    this.tip.innerHTML = this.tooltipHtml(st);
-    this.tip.classList.remove('hidden');
+    this.showTip(e, st);
+  }
+
+  /** Rebuild + measure only on a stack change; repeat pointermoves just reposition. */
+  private showTip(e: PointerEvent, st: ItemStack): void {
+    if (this.tipStack !== st || this.tipQty !== st.qty) {
+      this.tipStack = st;
+      this.tipQty = st.qty;
+      this.tip.innerHTML = this.tooltipHtml(st);
+      this.tip.classList.remove('hidden');
+      const r = this.tip.getBoundingClientRect(); // one forced layout per content change
+      this.tipW = r.width; this.tipH = r.height;
+    }
     this.positionTip(e.clientX, e.clientY);
   }
 
   private positionTip(px: number, py: number): void {
     const pad = 10;
-    const r = this.tip.getBoundingClientRect();
     let x = px + 16, y = py + 16;
-    if (x + r.width + pad > window.innerWidth) x = px - r.width - 16;
-    if (y + r.height + pad > window.innerHeight) y = window.innerHeight - r.height - pad;
+    if (x + this.tipW + pad > window.innerWidth) x = px - this.tipW - 16;
+    if (y + this.tipH + pad > window.innerHeight) y = window.innerHeight - this.tipH - pad;
     this.tip.style.left = `${Math.max(pad, x)}px`;
     this.tip.style.top = `${Math.max(pad, y)}px`;
   }
 
-  private hideTooltip(): void { this.tip.classList.add('hidden'); }
+  private hideTooltip(): void {
+    this.tip.classList.add('hidden');
+    this.tipStack = null;
+  }
 
   /** Tooltip body: name/tier/slot, item + required level (red if too low), weapon dmg/range,
    *  attribute bonuses, consumable effect, quantity, and an action hint. */
