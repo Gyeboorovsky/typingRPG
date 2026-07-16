@@ -336,6 +336,155 @@ AUTO MODE. Finalize the branch.
 
 ---
 
+# Filar E — Opcje i keybindy
+
+## E1 · [PLAN] — Menu opcji + pełny remap klawiszy
+
+```
+## Options menu + full keybinding remap
+
+PLAN MODE. Add an options-menu window and a keyboard-rebinding system that lets
+the player remap every game action. This builds directly on the B1 control-mode
+system (`routeKeydown` in `src/input.ts`) and MUST preserve every B1 invariant —
+especially the travel/fight collision rule. Keep `src/game/` pure; all binding
+state and UI live in the input/UI layers, never in the sim.
+
+### Background this depends on (from B1 — do not break)
+- `routeKeydown(mode, windowOpen, info)` branches on `mode` FIRST. Space/digits
+  switch mode ONLY in travel; in fight they are typed characters (prompts contain
+  spaces and tier-4 sentences — this must stay true or the sword prompt becomes
+  untypeable).
+- `Input` holds an optimistic local `mode`; sim `state.mode` is kept in sync via
+  emitted events. Movement resolves by `e.code`, typing by `e.key`.
+- Esc precedence today: open window → close it; else in fight → exit to travel;
+  else no-op. This ladder must be extended, not replaced.
+- Backspace is NOT bound to any mode-switching action — it now performs
+  typo-correction feel in fight and is not part of the control-mode system.
+
+### Two action classes (CRITICAL — resolves the rebind/typing collision)
+Split all bindable actions into two classes, because they interact with fight
+mode differently:
+
+- **TRAVEL-ONLY actions**: move up/down/left/right, toggle inventory, toggle
+  character, open options. These fire only in travel. In fight their bound keys
+  do nothing special — they fall through to typing (a key bound to "open
+  inventory" just types its character in fight, exactly like `i`/`c` do today).
+  These MAY be bound to plain letters/digits (e.g. `a`, `e`, `i`) with no risk,
+  because they're inert in fight.
+- **COMBAT actions**: exit fight (Esc only — Backspace is reserved for the
+  typo-correction feel and is NOT a rebindable action), set fire mode 1-4.
+  These must work IN fight. Therefore a plain printable key can NEVER be bound
+  to a combat action (it would be indistinguishable from typing that
+  character). Combat actions may be bound ONLY to: non-printable keys (Escape,
+  arrows, F-keys — NOT Backspace, which is reserved) OR modifier combos using
+  Left/Right Alt or Left/Right Ctrl (e.g. `Ctrl+Q`, `Alt+2`). Shift is EXCLUDED
+  as a modifier (it collides with capital letters / shifted symbols in tier-4
+  prompts). This generalizes B1's existing `Alt+digit` pattern.
+
+The binding editor must enforce this per-action-class at capture time: when
+rebinding a TRAVEL-ONLY action, accept any single key; when rebinding a COMBAT
+action, reject a plain-printable capture AND reject Backspace specifically
+(reserved, not rebindable), requiring a non-printable key or an Alt/Ctrl combo
+(show an inline hint explaining why).
+
+### Binding storage & resolution
+- Persist bindings at TWO levels: a **global default set** (device-wide, applies
+  to all characters) and an **optional per-character override**. Resolution:
+  per-character override if present for that action, else global default, else
+  the hardcoded factory default.
+  - Global defaults: store OUTSIDE the character save slots — do NOT bump
+    SaveData version for this. Investigate the existing persistence path
+    (`src/save/save.ts`); if saves are the only persistence, add a separate
+    top-level key/blob for global settings rather than threading bindings into
+    every character's SaveData. State in the plan exactly where global bindings
+    live and how they're loaded at startup.
+  - Per-character override: this one DOES live with the character. Decide in the
+    plan whether it goes in SaveData (new optional field, soft-migration like
+    A1's `stats?`/`statPoints?` precedent — absent = "use global") and whether
+    that warrants a version bump; prefer the soft-optional-field approach that
+    does NOT force a new save version if possible.
+- Factory defaults must reproduce the exact current keymap (backtick→travel,
+  digits/Space→fight, WSAD+arrows move, i/c windows, Esc→exit fight,
+  Alt+digit fire mode). Backspace is NOT part of the default binding table.
+
+### routeKeydown refactor
+- `routeKeydown` currently hardcodes key→action. Change it to resolve the pressed
+  key/combo against the ACTIVE binding table (passed in, so the function stays
+  pure and node-testable — no globals). Signature becomes something like
+  `routeKeydown(mode, windowOpen, info, bindings)`; the `Input` adapter owns the
+  resolved `bindings` object and passes it in.
+- The `mode`-first branch structure stays. Within each mode, instead of matching
+  literal `KeyW`/`Digit1`/etc., match against `bindings`. The collision rule now
+  reads: a COMBAT action only ever resolves in fight; a TRAVEL-ONLY action only in
+  travel; anything unmatched in fight falls through to typing (`e.key`), INCLUDING
+  Backspace, which must keep its typo-correction behavior untouched by this
+  refactor.
+- Keep the Alt/Ctrl combo matching (L or R side) for combat actions;
+  `preventDefault` on any resolved action key so it never leaks a character.
+
+### Options menu UI (`src/ui/`)
+- New options window. Open via: (a) an always-visible gear icon in a screen
+  corner, and (b) Esc when in travel with no other window open — extend the
+  Esc ladder as a new lowest-priority rung (open window → exit fight → **open
+  options (travel only)** → no-op). Esc must still exit fight in fight mode and
+  still close an open window first; the options-open rung fires ONLY in travel
+  with nothing else open. The gear icon works in any mode/context.
+- Sections: a **Keybindings** panel (functional) plus empty placeholder sections
+  for future settings (audio, graphics) — stub headers only, no controls.
+- Keybindings panel: list every bindable action grouped by class (Travel /
+  Combat), each row showing action name + current bound key; click a row → "press
+  a key…" capture state → validate against the action's class → save or reject.
+- **Conflict handling: HARD BLOCK.** Two actions may not share the same key/combo.
+  On a conflicting capture, reject and show which action already owns it; do NOT
+  save the duplicate. (No auto-clear, no "save with warning".)
+- **Restore defaults** button: resets the currently-shown level (respect the
+  global-vs-per-character distinction — decide and state whether reset acts on
+  global defaults, the per-character override, or offers both).
+- Register the options window in `hud.anyWindowOpen()` so Esc precedence and
+  the fight-prompt transparency logic keep treating it as a window.
+
+### main.ts wiring
+- Load global bindings at startup; load/clear per-character override on
+  character select/load (alongside the existing `forceTravel()` on load).
+- Pass the resolved binding table into `Input`; rebuild it when bindings change
+  (edit in menu) or when switching characters.
+
+### Edge cases to resolve in the plan
+- Rebinding the "open options" key itself, or the mode-switch keys, from inside
+  the menu — capture must not immediately re-trigger the action being bound.
+- A per-character override that binds an action to a key which, under the global
+  set, means something else — resolution is purely per-action, so confirm no
+  cross-action bleed.
+- Loading an old character with no override present → falls back to global
+  cleanly (soft-migration).
+- Backtick / Alt+digit / all resolved action keys keep `preventDefault` so they
+  never type in fight. Backspace is explicitly exempt from this system end-to-end.
+
+Deliver the plan (two-class action model, global-vs-per-character storage & where
+each lives, the `routeKeydown` signature change + how bindings are threaded purely,
+the Esc-ladder extension, conflict-block UX, the full default binding table, which
+tests change). Implement after approval.
+
+Tests (pure, node-only — import `routeKeydown` with an explicit bindings table):
+- default bindings reproduce every existing router test (regression: run the
+  current suite against the new signature with factory defaults);
+- a travel-only action rebound to a letter fires in travel but types that letter
+  in fight;
+- a combat action cannot be bound to a plain printable (validation rejects);
+- a combat action cannot be bound to Backspace specifically (reserved, rejects);
+- a combat action bound to an Alt/Ctrl combo fires in fight without emitting a
+  char;
+- conflict detection blocks a duplicate binding;
+- per-character override takes precedence over global, and absence falls back to
+  global then factory;
+- Backspace still performs typo-correction in fight, unaffected by the binding
+  system.
+
+`npm test` + `npm run build` green. Commit.
+```
+
+---
+
 ## Podsumowanie kolejności i trybów
 
 | # | Prompt | Tryb |
@@ -353,8 +502,9 @@ AUTO MODE. Finalize the branch.
 | C3 | Render: strzały/zasięg/wskaźniki | AUTO |
 | C4 | Strojenie + test integracyjny | AUTO |
 | D1 | Dokumentacja + QA + weryfikacja | AUTO |
+| E1 | Menu opcji + pełny remap klawiszy | PLAN |
 
-**5× PLAN** (rdzeń/save), **8× AUTO** (UI/kontent/testy). Po każdym promocie: **commit** + `npm test` + szybki rzut oka w grze.
+**6× PLAN** (rdzeń/save/input), **8× AUTO** (UI/kontent/testy). Po każdym promocie: **commit** + `npm test` + szybki rzut oka w grze.
 
 ### Znane zależności testowe (żeby model ich nie przeoczył)
 - `game.test.ts` l.40–50 → zmienia **A2** (physicalDamage zamiast baseDamage).
