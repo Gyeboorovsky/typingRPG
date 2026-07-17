@@ -23,7 +23,8 @@ import { applyCheat, applySave, makeSave, newGame, setLevel, update } from './si
 import type { ClassId, GameState, Mob, Mode, SaveData, Vec2 } from './types';
 import { escHoldBegin, escHoldCancel, escHoldFraction, escHoldTick, newEscHold, routeKeydown } from '../input';
 import type { KeyInfo } from '../input';
-import { canSetCombatModifier, cloneKeymap, DEFAULT_KEYMAP, findConflict, normalizeModifiers, validateCapture } from '../keybinds';
+import { canSetCombatModifier, cloneKeymap, DEFAULT_KEYMAP, findConflict, normalizeModifiers, SELECTABLE_COMBAT_MODIFIERS, validateCapture } from '../keybinds';
+import { loadSettings } from '../save/settings';
 import type { Captured, Keymap } from '../keybinds';
 import { topmostWindow } from '../ui/windows';
 import { KeystrokeRingBuffer } from '../keystroke-buffer';
@@ -822,13 +823,33 @@ describe('keybind validation + conflicts', () => {
     expect(findConflict({ code: 'KeyW', alt: false, ctrl: false }, DEFAULT_KEYMAP, 'moveUp')).toBeNull(); // self is not a conflict
   });
 
-  it('canSetCombatModifier blocks a switch that would strand a travel binding', () => {
-    expect(canSetCombatModifier('ctrl', DEFAULT_KEYMAP).ok).toBe(true); // defaults are plain keys
+  it('canSetCombatModifier rejects the non-selectable Ctrl, and blocks stranding for Alt', () => {
+    expect(canSetCombatModifier('ctrl', DEFAULT_KEYMAP).ok).toBe(false); // Ctrl not selectable in the browser build
+    expect(canSetCombatModifier('alt', DEFAULT_KEYMAP).ok).toBe(true);   // Alt fine with plain-key defaults
     const km: Keymap = cloneKeymap(DEFAULT_KEYMAP);
-    km.bindings.moveUp = { code: 'KeyW', alt: false, ctrl: true }; // a Ctrl+W travel binding
-    const res = canSetCombatModifier('ctrl', km);
+    km.bindings.moveUp = { code: 'KeyW', alt: true, ctrl: false }; // moveUp already uses Alt → switching to Alt strands it
+    const res = canSetCombatModifier('alt', km);
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.offenders).toContain('moveUp');
+  });
+
+  it('the combat modifier is locked to Alt (Ctrl removed until the desktop build)', () => {
+    expect(SELECTABLE_COMBAT_MODIFIERS).toEqual(['alt']);
+    expect(DEFAULT_KEYMAP.combatModifier).toBe('alt');
+  });
+
+  it('a stored combatModifier of ctrl migrates to alt on load', () => {
+    const store: Record<string, string> = {
+      'typingRPG.settings': JSON.stringify({ version: 1, combatModifier: 'ctrl', bindings: {} }),
+    };
+    const gt = globalThis as { localStorage?: unknown };
+    const prev = gt.localStorage;
+    gt.localStorage = { getItem: (key: string) => store[key] ?? null, setItem: () => {}, removeItem: () => {} };
+    try {
+      expect(loadSettings().combatModifier).toBe('alt');
+    } finally {
+      gt.localStorage = prev;
+    }
   });
 });
 

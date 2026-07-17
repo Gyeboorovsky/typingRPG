@@ -69,8 +69,10 @@ async function boot(): Promise<void> {
     setCombatModifier: (m) => {
       const check = canSetCombatModifier(m, keymap);
       if (!check.ok) {
-        const names = check.offenders.map((o) => ACTIONS[o].label).join(', ');
-        return { ok: false, reason: `Rebind ${names} first — ${modifierLabel(m)} would be unreachable in fight.` };
+        const reason = check.offenders.length
+          ? `Rebind ${check.offenders.map((o) => ACTIONS[o].label).join(', ')} first — ${modifierLabel(m)} would be unreachable in fight.`
+          : `${modifierLabel(m)} isn't available in the browser build.`;
+        return { ok: false, reason };
       }
       keymap.combatModifier = m;
       saveSettings(keymap);

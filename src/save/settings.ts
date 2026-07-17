@@ -2,7 +2,7 @@
 // every character and stored OUTSIDE the character save slots. Its own localStorage key
 // (a sibling of backends.ts's `typingRPG.save.<slot>`), never threaded through SaveData.
 // Loaded synchronously at boot so the very first keydown already sees the real bindings.
-import { ACTION_ORDER, cloneKeymap, DEFAULT_KEYMAP } from '../keybinds';
+import { ACTION_ORDER, cloneKeymap, DEFAULT_KEYMAP, SELECTABLE_COMBAT_MODIFIERS } from '../keybinds';
 import type { Combo, Keymap, ModifierKey } from '../keybinds';
 
 const SETTINGS_KEY = 'typingRPG.settings';
@@ -27,7 +27,9 @@ export function loadSettings(): Keymap {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (!raw) return keymap;
     const data = JSON.parse(raw) as StoredSettings;
-    if (data.combatModifier === 'alt' || data.combatModifier === 'ctrl') {
+    // A stored non-selectable modifier (e.g. 'ctrl' from an earlier session) is ignored → the
+    // cloned default 'alt' stays. Self-heals: the next saveSettings rewrites 'alt'.
+    if (SELECTABLE_COMBAT_MODIFIERS.includes(data.combatModifier)) {
       keymap.combatModifier = data.combatModifier;
     }
     if (data.bindings && typeof data.bindings === 'object') {

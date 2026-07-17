@@ -3,7 +3,7 @@
 // and routes rebind / modifier / restore intents to callbacks wired in main.ts (the keymap's
 // single source of truth). It owns the "press a key…" capture flow. Hud owns open/close +
 // z-order and calls render()/cancelCapture().
-import { ACTION_ORDER, ACTIONS, comboLabel, modifierLabel, normalizeModifiers } from '../keybinds';
+import { ACTION_ORDER, ACTIONS, comboLabel, modifierLabel, normalizeModifiers, SELECTABLE_COMBAT_MODIFIERS } from '../keybinds';
 import type { ActionId, Captured, Keymap, ModifierKey } from '../keybinds';
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
@@ -108,12 +108,13 @@ export class OptionsMenu {
     const row = el('div', '', 'opt-row');
     const name = el('span', 'Hold in fight to move / open windows', 'opt-name');
     const sel = el('select', '', 'opt-select') as HTMLSelectElement;
-    for (const m of ['alt', 'ctrl'] as ModifierKey[]) {
+    for (const m of SELECTABLE_COMBAT_MODIFIERS) {
       const o = document.createElement('option');
       o.value = m; o.textContent = modifierLabel(m);
       if (keymap.combatModifier === m) o.selected = true;
       sel.appendChild(o);
     }
+    sel.disabled = SELECTABLE_COMBAT_MODIFIERS.length <= 1; // locked to Alt while there's one option
     const hint = el('div', '', 'opt-hint hidden');
     sel.addEventListener('change', () => {
       const res = this.deps.setCombatModifier(sel.value as ModifierKey);
@@ -124,6 +125,9 @@ export class OptionsMenu {
     });
     row.append(name, sel, hint);
     sec.appendChild(row);
+    if (SELECTABLE_COMBAT_MODIFIERS.length <= 1) {
+      sec.appendChild(el('div', 'Ctrl unlocks in the desktop build — browser shortcuts (Ctrl+W…) conflict.', 'hint'));
+    }
     return sec;
   }
 }

@@ -17,6 +17,13 @@ export type ActionCategory = 'travel' | 'enterFight' | 'combat';
 
 export type ModifierKey = 'alt' | 'ctrl';
 
+/** Combat modifiers the options UI currently offers. Ctrl is intentionally excluded: in a
+ *  browser, holding Ctrl in fight collides with shortcuts that can't be preventDefault'd
+ *  (Ctrl+W closes the tab). RE-ENABLE by adding 'ctrl' here once running as the desktop
+ *  (Tauri — see src-tauri/) build — the router already handles 'ctrl' end to end
+ *  (isCombatModifierKey / eventMatchesCombo strip / updateModHeld), so this is the one seam. */
+export const SELECTABLE_COMBAT_MODIFIERS: readonly ModifierKey[] = ['alt'];
+
 // A bound key: a physical `code` (layout-independent) plus optional Alt/Ctrl.
 // Shift/Meta are never part of a binding — Shift is reserved for typed input,
 // Meta is left to the OS.
@@ -212,6 +219,7 @@ export function findConflict(c: Combo, keymap: Keymap, exceptId: ActionId): Acti
  *  binding uses `next` (it would become unreachable in fight). */
 export function canSetCombatModifier(next: ModifierKey, keymap: Keymap):
   { ok: true } | { ok: false; offenders: ActionId[] } {
+  if (!SELECTABLE_COMBAT_MODIFIERS.includes(next)) return { ok: false, offenders: [] }; // not selectable in this build
   const offenders: ActionId[] = [];
   for (const id of ACTION_ORDER) {
     const cat = ACTIONS[id].category;
