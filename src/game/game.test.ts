@@ -21,7 +21,7 @@ import { EQUIP_SLOTS } from './types';
 import { rand } from './rng';
 import { applySave, makeSave, newGame, update } from './sim';
 import type { ClassId, GameState, Mob, Mode, SaveData, Vec2 } from './types';
-import { routeKeydown } from '../input';
+import { escHoldBegin, escHoldCancel, escHoldFraction, escHoldTick, newEscHold, routeKeydown } from '../input';
 import type { KeyInfo } from '../input';
 import { canSetCombatModifier, cloneKeymap, DEFAULT_KEYMAP, findConflict, validateCapture } from '../keybinds';
 import type { Captured, Keymap } from '../keybinds';
@@ -655,25 +655,84 @@ describe('routeKeydown (pure keystroke router)', () => {
     expect(res.events.some((e) => e.type === 'setMode')).toBe(false);
   });
 
-  // --- Esc ladder (two jobs; job 3 is a Part-2 no-op) ---
-  it('Esc closes the topmost window when one is open (either mode)', () => {
+  // --- Esc ladder (jobs 1 & 2 unchanged; job 3 now arms the hold-to-exit) ---
+  it('Esc closes the topmost window when one is open (either mode) — never arms a hold', () => {
     const res = r('fight', true, k({ code: 'Escape', key: 'Escape' }));
     expect(res.ui).toBe('closeTopWindow');
     expect(res.mode).toBe('fight');
     expect(res.events).toEqual([]);
+    expect(res.beginEscHold).toBe(false); // a window-closing press can never roll into exit-fight
   });
 
   it('Esc in travel with no window open opens options', () => {
     const res = r('travel', false, k({ code: 'Escape', key: 'Escape' }));
     expect(res.ui).toBe('openOptions');
     expect(res.events).toEqual([]);
+    expect(res.beginEscHold).toBe(false);
   });
 
-  it('Esc in fight with no window open does nothing (Part-2 slot)', () => {
+  it('Esc in fight with no window open arms the hold-to-exit (no instant exit)', () => {
     const res = r('fight', false, k({ code: 'Escape', key: 'Escape' }));
+    expect(res.beginEscHold).toBe(true);
     expect(res.ui).toBeNull();
-    expect(res.mode).toBe('fight');
+    expect(res.mode).toBe('fight'); // the exit only lands once the hold reaches the threshold
     expect(res.events).toEqual([]);
+  });
+
+  it('Esc-hold is independent of what exitFight is bound to', () => {
+    const km = cloneKeymap(DEFAULT_KEYMAP);
+    km.bindings.exitFight = { code: 'KeyZ', alt: false, ctrl: true }; // rebound away from Alt+Q
+    const res = routeKeydown('fight', false, k({ code: 'Escape', key: 'Escape' }), km, false);
+    expect(res.beginEscHold).toBe(true); // Esc is hardcoded — the keymap can't change it
+  });
+});
+
+describe('Esc hold-to-exit timer (pure, explicit dt driving)', () => {
+  const T = 1000; // threshold ms, passed explicitly — no wall-clock, no real constant needed
+
+  it('fires once on the tick it reaches the threshold; progress rises 0→1 then resets', () => {
+    const h = newEscHold();
+    escHoldBegin(h);
+    expect(escHoldFraction(h, T)).toBe(0);
+    expect(escHoldTick(h, 400, true, T)).toBe(false);
+    expect(escHoldFraction(h, T)).toBeCloseTo(0.4);
+    expect(escHoldTick(h, 400, true, T)).toBe(false);
+    expect(escHoldFraction(h, T)).toBeCloseTo(0.8);
+    expect(escHoldTick(h, 400, true, T)).toBe(true); // crosses 1000 → exit fires
+    expect(escHoldFraction(h, T)).toBe(0);           // auto-reset
+    expect(escHoldTick(h, 400, true, T)).toBe(false); // and never fires twice
+  });
+
+  it('fires at exactly the threshold (>= tie-break)', () => {
+    const h = newEscHold();
+    escHoldBegin(h);
+    expect(escHoldTick(h, 500, true, T)).toBe(false);
+    expect(escHoldTick(h, 500, true, T)).toBe(true); // exactly 1000
+  });
+
+  it('releasing before the threshold cancels: no exit, progress resets', () => {
+    const h = newEscHold();
+    escHoldBegin(h);
+    escHoldTick(h, 900, true, T);
+    expect(escHoldFraction(h, T)).toBeCloseTo(0.9);
+    escHoldCancel(h); // keyup
+    expect(escHoldFraction(h, T)).toBe(0);
+    expect(escHoldTick(h, 900, true, T)).toBe(false); // stays cancelled — holding Esc again can't resume it
+  });
+
+  it('going invalid mid-hold (window opened / left fight) cancels instead of firing', () => {
+    const h = newEscHold();
+    escHoldBegin(h);
+    escHoldTick(h, 900, true, T);
+    expect(escHoldTick(h, 900, false, T)).toBe(false); // would have crossed 1000, but invalid → cancel
+    expect(escHoldFraction(h, T)).toBe(0);
+    expect(escHoldTick(h, 900, true, T)).toBe(false); // does not resume on its own; needs a fresh press
+  });
+
+  it('a hold that was never armed never fires', () => {
+    const h = newEscHold();
+    expect(escHoldTick(h, 5000, true, T)).toBe(false);
+    expect(escHoldFraction(h, T)).toBe(0);
   });
 });
 

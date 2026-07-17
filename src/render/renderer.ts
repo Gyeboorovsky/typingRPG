@@ -17,6 +17,9 @@ import type { TerrainLayer } from './terrain';
 
 const IX = TILE_W / 2, IY = TILE_H / 2; // 32, 16
 const SQ2 = Math.SQRT2;
+// Esc hold-to-exit ring: a fixed iso ellipse hugging the player's base — a UI indicator, not a
+// gameplay radius, so it's sized in pixels (2:1 iso ratio) and sits inside the streak ring.
+const ESC_RING_RX = IX * 1.25, ESC_RING_RY = IY * 1.25;
 
 interface Particle { wx: number; wy: number; text: string; color: string; born: number }
 interface Burst { wx: number; wy: number; r: number; color: string; born: number }
@@ -42,7 +45,7 @@ export class Renderer {
   /** Snap the camera to the player instead of gliding, e.g. after switching characters. */
   resetCamera(): void { this.camInit = false; }
 
-  draw(state: GameState, fx: Fx[], t: number, viewW: number, viewH: number): void {
+  draw(state: GameState, fx: Fx[], t: number, viewW: number, viewH: number, escHoldProgress = 0): void {
     const ctx = this.ctx;
     const pp = playerWorldPos(state.player);
 
@@ -132,6 +135,26 @@ export class Renderer {
           drawPlayer(ctx, e.sx, e.sy, t, p.dir, state.held.length > 0, p.animT, p.dead, p.classId);
           break;
       }
+    }
+
+    // Esc hold-to-exit ring: fills red clockwise from the top as the hold builds. Drawn OVER the
+    // entities (unlike the streak ring's ground slot) so the player's body can't hide the fill.
+    // Gated on state.mode so it can never linger once the sim has already left fight.
+    if (escHoldProgress > 0 && state.mode === 'fight' && !p.dead) {
+      const sx = projX(pp.x, pp.y) - cx, sy = projY(pp.x, pp.y) - cy;
+      const start = -Math.PI / 2;
+      ctx.strokeStyle = PAL.exitRing;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.22; // faint full track
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, ESC_RING_RX, ESC_RING_RY, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 0.95; // bright progress arc
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, ESC_RING_RX, ESC_RING_RY, 0, start, start + escHoldProgress * Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
     }
 
     this.drawParticles(t, cx, cy);

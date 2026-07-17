@@ -22,6 +22,10 @@ export const BOSS_SHIELD_AT = [0.66, 0.33]; // HP fractions triggering shield ph
 export const PROMPT_MP_REWARD = 5;    // mana per completed prompt
 export const PROMPT_TARGET_LEN: Record<number, number> = { 1: 5, 2: 10, 3: 18, 4: 28 };
 
+// controls / input
+// NOTE: milliseconds — unlike the second-based timers elsewhere here; dt is converted where it's ticked.
+export const ESC_HOLD_EXIT_FIGHT_MS = 1000; // Esc held this long in fight (no window open) exits to travel
+
 // ultimate
 export const ULT_DAMAGE = 25;
 export const ULT_RADIUS_MULT = 1.5;

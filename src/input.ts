@@ -11,6 +11,7 @@
 //   fight  — printable chars feed the typing resolver; combat actions fire directly;
 //            travel actions fire only while the combat-modifier is held (which also
 //            unlocks movement). Esc/Backspace are inert here (Part 2 adds hold-to-exit).
+import { ESC_HOLD_EXIT_FIGHT_MS } from './game/constants';
 import type { Dir, InputEvent, Mode } from './game/types';
 import { ACTIONS, DEFAULT_KEYMAP, resolveAction } from './keybinds';
 import type { ActionId, Keymap } from './keybinds';
@@ -27,6 +28,7 @@ export interface KeyRoute {
   clearHeld: boolean;     // true when entering/leaving fight — drop any held movement
   movePress: Dir | null;  // a movement key pressed this event, else null
   ui: 'toggleInventory' | 'toggleCharacter' | 'closeTopWindow' | 'openOptions' | null;
+  beginEscHold: boolean;  // Esc pressed in fight with no window open — arm the hold-to-exit timer
 }
 
 const isPrintable = (info: KeyInfo): boolean =>
@@ -60,7 +62,7 @@ export function routeKeydown(
   mode: Mode, windowOpen: boolean, info: KeyInfo, keymap: Keymap, travelUnlocked: boolean,
 ): KeyRoute {
   const base: KeyRoute = {
-    preventDefault: false, events: [], mode, clearHeld: false, movePress: null, ui: null,
+    preventDefault: false, events: [], mode, clearHeld: false, movePress: null, ui: null, beginEscHold: false,
   };
 
   // --- Hardcoded system keys (never via the binding table) ---
@@ -68,8 +70,9 @@ export function routeKeydown(
   if (info.key === 'Escape') {
     if (windowOpen) return { ...base, preventDefault: true, ui: 'closeTopWindow' };
     if (mode === 'travel') return { ...base, preventDefault: true, ui: 'openOptions' };
-    // Part 2 fills this slot with a hold-to-confirm fight exit; for now it does nothing.
-    return { ...base, preventDefault: true };
+    // fight + no window: arm a hold-to-confirm exit. Only a keydown that lands HERE can arm it —
+    // one that closed a window took the branch above, so a window-close can never roll into an exit.
+    return { ...base, preventDefault: true, beginEscHold: true };
   }
   // Enter (ult/respawn) and Tab (inventory) behave the same in both modes.
   if (info.key === 'Enter') return { ...base, preventDefault: true, events: [{ type: 'ult' }, { type: 'respawn' }] };
@@ -104,6 +107,30 @@ export function routeKeydown(
   return base;
 }
 
+// --- Esc hold-to-confirm fight exit (pure; Input owns one, tests drive it with explicit dt) ---
+/** Live progress of a hold-to-exit gesture. Transient input state — deliberately NOT on
+ *  GameState: the sim only ever learns the final outcome (a setMode travel via forceTravel). */
+export interface EscHold { holding: boolean; ms: number }
+
+export const newEscHold = (): EscHold => ({ holding: false, ms: 0 });
+export function escHoldBegin(h: EscHold): void { h.holding = true; h.ms = 0; }
+export function escHoldCancel(h: EscHold): void { h.holding = false; h.ms = 0; }
+
+/** Advance one tick. `valid` (still in fight, no window open) is re-derived by the caller every
+ *  tick — not latched at press time — so the hold cancels the moment it stops holding. Returns
+ *  true on the single tick it crosses the threshold (>=, so reaching it fires), then auto-resets. */
+export function escHoldTick(h: EscHold, dtMs: number, valid: boolean, thresholdMs: number): boolean {
+  if (!h.holding) return false;
+  if (!valid) { h.holding = false; h.ms = 0; return false; } // window opened / left fight → cancel
+  h.ms += dtMs;
+  if (h.ms >= thresholdMs) { h.holding = false; h.ms = 0; return true; }
+  return false;
+}
+
+/** 0..1 for the render ring; 0 when no hold is active. */
+export const escHoldFraction = (h: EscHold, thresholdMs: number): number =>
+  h.holding ? Math.min(h.ms / thresholdMs, 1) : 0;
+
 export class Input {
   private queue: InputEvent[] = [];
   private held: Dir[] = [];
@@ -111,6 +138,7 @@ export class Input {
   private keymap: Keymap = DEFAULT_KEYMAP;
   private modHeld = false; // is the combat-modifier currently held (live, non-latched)
   private moveCodeToDir: Record<string, Dir> = {}; // bound movement code → dir, for keyup release
+  private escHold = newEscHold(); // live Esc hold-to-exit progress (fight only; drives the ring)
   enabled: () => boolean = () => true;       // false behind the char-select screen
   windowOpen: () => boolean = () => false;   // a HUD window / carried item / char-select is open — for Esc precedence
   onToggleInventory: () => void = () => {};
@@ -123,12 +151,14 @@ export class Input {
     window.addEventListener('keydown', (e) => this.keydown(e));
     window.addEventListener('keyup', (e) => {
       this.updateModHeld(e);
+      if (e.key === 'Escape') escHoldCancel(this.escHold); // releasing before the threshold cancels
       const dir = this.moveCodeToDir[e.code];
       if (dir !== undefined) this.release(dir);
     });
-    window.addEventListener('blur', () => { // don't leave keys / the modifier stuck
+    window.addEventListener('blur', () => { // don't leave keys / the modifier / a hold stuck
       if (this.held.length) { this.held = []; this.pushMove(); }
       if (this.modHeld) { this.modHeld = false; this.queue.push({ type: 'setTravelUnlocked', value: false }); }
+      escHoldCancel(this.escHold);
     });
   }
 
@@ -171,6 +201,9 @@ export class Input {
       this.held.push(route.movePress);
       this.pushMove();
     }
+    // Only a FRESH press arms the hold — OS auto-repeats can't, so a keydown that closed a window
+    // (and then stayed down) never rolls into an exit: the player must release and press again.
+    if (route.beginEscHold && !e.repeat) escHoldBegin(this.escHold);
     for (const ev of route.events) this.queue.push(ev);
     if (route.ui === 'toggleInventory') this.onToggleInventory();
     else if (route.ui === 'toggleCharacter') this.onToggleCharacter();
@@ -181,10 +214,25 @@ export class Input {
   /** Force the input layer back to travel (death / character load / sim auto-exit / a future
    *  Part 2 hold-exit). Idempotent; drops any held movement so a stale press can't linger. */
   forceTravel(): void {
+    escHoldCancel(this.escHold); // leaving fight for ANY reason ends the hold (and its ring)
     if (this.mode === 'travel') return;
     this.mode = 'travel';
     this.queue.push({ type: 'setMode', mode: 'travel' });
     if (this.held.length) { this.held = []; this.pushMove(); }
+  }
+
+  /** Advance the Esc hold-to-exit timer one sim step (dt in seconds). Validity is re-derived live,
+   *  so a window opening — or the sim leaving fight on its own (death / last aggroed mob gone) —
+   *  cancels it immediately. On reaching the threshold it fires the SAME outcome as the exitFight
+   *  action by calling forceTravel(); no exit logic is duplicated and no keypress is synthesized. */
+  tickEscHold(dt: number): void {
+    const valid = this.mode === 'fight' && !this.windowOpen();
+    if (escHoldTick(this.escHold, dt * 1000, valid, ESC_HOLD_EXIT_FIGHT_MS)) this.forceTravel();
+  }
+
+  /** 0..1 hold progress, for the render ring. 0 when no hold is active. */
+  escHoldProgress(): number {
+    return escHoldFraction(this.escHold, ESC_HOLD_EXIT_FIGHT_MS);
   }
 
   private release(dir: Dir): void {

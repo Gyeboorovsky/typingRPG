@@ -27,6 +27,7 @@ export const PAL = {
   enrage: 'rgba(255,60,60,0.4)', shieldRing: '#5fc9f0',
 
   ring: '#ffd75e',
+  exitRing: '#ff5a5a',  // Esc hold-to-exit progress ring (track = same color, lower alpha)
   mobBarBack: 'rgba(0,0,0,0.55)', mobBarFill: '#e0484f',
   dmgText: '#ffffff', hurtText: '#ff6b6b', xpText: '#ffd75e',
   burst: '#ffd75e', shieldBurst: '#5fc9f0',

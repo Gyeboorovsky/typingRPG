@@ -157,7 +157,10 @@ async function boot(): Promise<void> {
     last = now;
     let steps = 0;
     while (acc >= STEP_MS && steps < 5) {
-      if (!blocked) update(state, input.drain(), SIM_DT); else input.drain();
+      // Tick the Esc hold-to-exit BEFORE draining, so a threshold-crossing forceTravel() lands its
+      // setMode travel in this same tick's update.
+      if (!blocked) { input.tickEscHold(SIM_DT); update(state, input.drain(), SIM_DT); }
+      else input.drain();
       steps++;
       acc -= STEP_MS;
     }
@@ -172,7 +175,7 @@ async function boot(): Promise<void> {
       if (fx.some((f) => f.kind === 'levelup')) void saver.saveNow(state);
       else saver.tick(state, steps * SIM_DT);
     }
-    renderer.draw(state, fx, now / 1000, viewW, viewH);
+    renderer.draw(state, fx, now / 1000, viewW, viewH, input.escHoldProgress());
     hud.sync(state, fx);
     requestAnimationFrame(frame);
   }
@@ -186,7 +189,10 @@ async function boot(): Promise<void> {
         setMode: (mode: 'travel' | 'fight') => input.push({ type: 'setMode', mode }),
         press: (t: 'ult' | 'respawn') => input.push({ type: t }),
         move: (dirs: number[]) => input.push({ type: 'move', dirs: dirs as never }),
-        step: (n: number) => { for (let i = 0; i < n; i++) update(state, input.drain(), SIM_DT); },
+        step: (n: number) => { // mirrors the frame loop, so a scripted Esc hold advances too
+          for (let i = 0; i < n; i++) { input.tickEscHold(SIM_DT); update(state, input.drain(), SIM_DT); }
+        },
+        escHoldProgress: () => input.escHoldProgress(),
         frame: (t = performance.now() / 1000, w?: number, h?: number) => {
           if (w && h) { // render headless at a forced size (hidden-tab checks)
             viewW = w; viewH = h;
@@ -195,7 +201,7 @@ async function boot(): Promise<void> {
           }
           const fx = state.fx;
           state.fx = [];
-          renderer.draw(state, fx, t, viewW, viewH);
+          renderer.draw(state, fx, t, viewW, viewH, input.escHoldProgress());
           hud.sync(state, fx);
         },
       },
