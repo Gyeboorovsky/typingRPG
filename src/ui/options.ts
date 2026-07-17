@@ -3,7 +3,7 @@
 // and routes rebind / modifier / restore intents to callbacks wired in main.ts (the keymap's
 // single source of truth). It owns the "press a key…" capture flow. Hud owns open/close +
 // z-order and calls render()/cancelCapture().
-import { ACTION_ORDER, ACTIONS, comboLabel, modifierLabel } from '../keybinds';
+import { ACTION_ORDER, ACTIONS, comboLabel, modifierLabel, normalizeModifiers } from '../keybinds';
 import type { ActionId, Captured, Keymap, ModifierKey } from '../keybinds';
 
 const $ = (id: string): HTMLElement => document.getElementById(id)!;
@@ -20,6 +20,7 @@ export interface OptionsDeps {
 export class OptionsMenu {
   private body = $('options-body');
   private captureListener: ((e: KeyboardEvent) => void) | null = null;
+  private captureRestore: (() => void) | null = null; // reverts the mid-capture row's label on cancel
 
   constructor(private deps: OptionsDeps) {}
 
@@ -35,6 +36,8 @@ export class OptionsMenu {
 
   /** Stop any in-progress "press a key…" capture (called on close / re-render). */
   cancelCapture(): void {
+    this.captureRestore?.(); // revert the row's "press a key…" back to its current binding label
+    this.captureRestore = null;
     if (this.captureListener) {
       window.removeEventListener('keydown', this.captureListener, { capture: true });
       this.captureListener = null;
@@ -79,24 +82,22 @@ export class OptionsMenu {
       btn.classList.remove('capturing');
       btn.textContent = comboLabel(this.deps.getKeymap().bindings[id]);
     };
+    this.captureRestore = restore; // so cancelCapture (incl. clicking another row) reverts this label
 
     this.captureListener = (e: KeyboardEvent): void => {
       e.preventDefault();
       e.stopImmediatePropagation(); // never let the game (or anything else) see the capture keystroke
-      if (e.key === 'Alt' || e.key === 'Control' || e.key === 'Shift' || e.key === 'Meta') return; // wait for the real key
-      if (e.key === 'Escape') { this.cancelCapture(); restore(); return; } // cancel capture, keep the binding
+      // Ignore lone modifier presses — incl. AltGr (key 'AltGraph') — and wait for the real key.
+      if (e.key === 'Alt' || e.key === 'AltGraph' || e.key === 'Control' || e.key === 'Shift' || e.key === 'Meta') return;
+      if (e.key === 'Escape') { this.cancelCapture(); return; } // cancel — cancelCapture reverts the label
+      const { alt, ctrl } = normalizeModifiers(e.altKey, e.ctrlKey, e.getModifierState('AltGraph'));
       const cap: Captured = {
-        code: e.code, key: e.key, alt: e.altKey, ctrl: e.ctrlKey, shift: e.shiftKey, meta: e.metaKey,
+        code: e.code, key: e.key, alt, ctrl, shift: e.shiftKey, meta: e.metaKey,
       };
       const res = this.deps.tryRebind(id, cap);
-      this.cancelCapture();
-      if (res.ok) {
-        this.render(this.deps.getKeymap()); // reflect the new binding across the panel
-      } else {
-        restore();
-        hint.textContent = res.reason;
-        hint.classList.remove('hidden');
-      }
+      this.cancelCapture(); // reverts the label to the current binding + removes the listener
+      if (res.ok) this.render(this.deps.getKeymap()); // reflect the new binding across the panel
+      else { hint.textContent = res.reason; hint.classList.remove('hidden'); }
     };
     window.addEventListener('keydown', this.captureListener, { capture: true });
   }

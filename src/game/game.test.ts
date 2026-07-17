@@ -23,7 +23,7 @@ import { applyCheat, applySave, makeSave, newGame, setLevel, update } from './si
 import type { ClassId, GameState, Mob, Mode, SaveData, Vec2 } from './types';
 import { escHoldBegin, escHoldCancel, escHoldFraction, escHoldTick, newEscHold, routeKeydown } from '../input';
 import type { KeyInfo } from '../input';
-import { canSetCombatModifier, cloneKeymap, DEFAULT_KEYMAP, findConflict, validateCapture } from '../keybinds';
+import { canSetCombatModifier, cloneKeymap, DEFAULT_KEYMAP, findConflict, normalizeModifiers, validateCapture } from '../keybinds';
 import type { Captured, Keymap } from '../keybinds';
 import { topmostWindow } from '../ui/windows';
 import { KeystrokeRingBuffer } from '../keystroke-buffer';
@@ -574,7 +574,7 @@ describe('arrowsPerCharsInterval derivation (bow tempo helper)', () => {
 
 describe('routeKeydown (pure keystroke router)', () => {
   const k = (over: Partial<KeyInfo> & { code: string }): KeyInfo =>
-    ({ key: '', altKey: false, ctrlKey: false, metaKey: false, ...over });
+    ({ key: '', altKey: false, ctrlKey: false, metaKey: false, repeat: false, ...over });
   // Route against the factory keymap; travelUnlocked defaults false (combat-modifier not held).
   const r = (mode: Mode, windowOpen: boolean, info: KeyInfo, unlocked = false) =>
     routeKeydown(mode, windowOpen, info, DEFAULT_KEYMAP, unlocked);
@@ -686,6 +686,65 @@ describe('routeKeydown (pure keystroke router)', () => {
     km.bindings.exitFight = { code: 'KeyZ', alt: false, ctrl: true }; // rebound away from Alt+Q
     const res = routeKeydown('fight', false, k({ code: 'Escape', key: 'Escape' }), km, false);
     expect(res.beginEscHold).toBe(true); // Esc is hardcoded — the keymap can't change it
+  });
+
+  // --- Auto-repeat suppression (Bugs 1 & 2): discrete window/hold actions fire once per press ---
+  it('an auto-repeat Escape does not close a window (job 1 is fresh-press-only)', () => {
+    expect(r('fight', true, k({ code: 'Escape', key: 'Escape' })).ui).toBe('closeTopWindow'); // fresh
+    expect(r('fight', true, k({ code: 'Escape', key: 'Escape', repeat: true })).ui).toBeNull(); // repeat
+  });
+
+  it('an auto-repeat Escape does not open options (job 2 is fresh-press-only)', () => {
+    expect(r('travel', false, k({ code: 'Escape', key: 'Escape' })).ui).toBe('openOptions'); // fresh
+    expect(r('travel', false, k({ code: 'Escape', key: 'Escape', repeat: true })).ui).toBeNull(); // repeat
+  });
+
+  it('an auto-repeat Escape does not re-arm the exit-hold (the tick timer drives it, not repeats)', () => {
+    expect(r('fight', false, k({ code: 'Escape', key: 'Escape' })).beginEscHold).toBe(true); // fresh
+    expect(r('fight', false, k({ code: 'Escape', key: 'Escape', repeat: true })).beginEscHold).toBe(false); // repeat
+  });
+
+  it('auto-repeat also suppresses movement and window toggles', () => {
+    expect(r('travel', false, k({ code: 'KeyW', key: 'w', repeat: true })).movePress).toBeNull();
+    expect(r('travel', false, k({ code: 'KeyI', key: 'i', repeat: true })).ui).toBeNull();
+  });
+});
+
+describe('normalizeModifiers (AltGr / right-modifier handling — Bug 3)', () => {
+  it('left/plain modifiers pass through unchanged', () => {
+    expect(normalizeModifiers(true, false, false)).toEqual({ alt: true, ctrl: false });
+    expect(normalizeModifiers(false, true, false)).toEqual({ alt: false, ctrl: true });
+    expect(normalizeModifiers(false, false, false)).toEqual({ alt: false, ctrl: false });
+  });
+  it('AltGr (reports AltGraph, ± altKey/ctrlKey on Windows) folds to a plain Alt', () => {
+    expect(normalizeModifiers(false, true, true)).toEqual({ alt: true, ctrl: false });
+    expect(normalizeModifiers(true, true, true)).toEqual({ alt: true, ctrl: false });
+    expect(normalizeModifiers(false, false, true)).toEqual({ alt: true, ctrl: false });
+  });
+  it('a real Ctrl+Alt (no AltGraph) stays both', () => {
+    expect(normalizeModifiers(true, true, false)).toEqual({ alt: true, ctrl: true });
+  });
+});
+
+describe('validateCapture — browser-reserved combos (Bug 4)', () => {
+  const cap = (over: Partial<Captured> & { code: string; key: string }): Captured =>
+    ({ alt: false, ctrl: false, shift: false, meta: false, ...over });
+
+  it('rejects Ctrl+W / Ctrl+Digit1 / Alt+F4 with the browser hint', () => {
+    for (const c of [
+      cap({ code: 'KeyW', key: 'w', ctrl: true }),
+      cap({ code: 'Digit1', key: '1', ctrl: true }),
+      cap({ code: 'F4', key: 'F4', alt: true }),
+    ]) {
+      const res = validateCapture('exitFight', c, DEFAULT_KEYMAP);
+      expect(res.ok).toBe(false);
+      if (!res.ok) expect(res.reason).toMatch(/reserved by your browser/i);
+    }
+  });
+
+  it('allows non-reserved Ctrl combos and Ctrl+Alt variants (has alt → not a browser shortcut)', () => {
+    expect(validateCapture('exitFight', cap({ code: 'KeyE', key: 'e', ctrl: true }), DEFAULT_KEYMAP).ok).toBe(true);
+    expect(validateCapture('exitFight', cap({ code: 'KeyW', key: 'w', ctrl: true, alt: true }), DEFAULT_KEYMAP).ok).toBe(true);
   });
 });
 

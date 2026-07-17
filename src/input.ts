@@ -13,12 +13,12 @@
 //            unlocks movement). Esc/Backspace are inert here (Part 2 adds hold-to-exit).
 import { ESC_HOLD_EXIT_FIGHT_MS } from './game/constants';
 import type { Dir, InputEvent, Mode } from './game/types';
-import { ACTIONS, DEFAULT_KEYMAP, resolveAction } from './keybinds';
+import { ACTIONS, DEFAULT_KEYMAP, normalizeModifiers, resolveAction } from './keybinds';
 import type { ActionId, Keymap } from './keybinds';
 
 // The bits of a KeyboardEvent the router needs — a plain descriptor so tests don't need a DOM.
 export interface KeyInfo {
-  key: string; code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean;
+  key: string; code: string; altKey: boolean; ctrlKey: boolean; metaKey: boolean; repeat: boolean;
 }
 
 export interface KeyRoute {
@@ -54,11 +54,21 @@ function routeForAction(base: KeyRoute, id: ActionId): KeyRoute {
   return { ...base, preventDefault: true, events: [{ type: 'setFireMode', fireMode: meta.fireMode! }] };
 }
 
-/** Pure keystroke router: given mode, whether a window is open, the active keymap, and
- *  whether the combat-modifier is currently held, decide what a keydown does. No DOM, no
- *  state mutation — the Input class applies the returned KeyRoute. Returns exactly one
- *  route, so at most one action ever fires per physical keydown. */
+/** Pure keystroke router: decides what a keydown does and returns exactly one route. No DOM, no
+ *  state mutation — the Input class applies the returned KeyRoute. Discrete window/hold actions
+ *  are suppressed on OS auto-repeat (see below), so a held key can only drive the fight-exit hold. */
 export function routeKeydown(
+  mode: Mode, windowOpen: boolean, info: KeyInfo, keymap: Keymap, travelUnlocked: boolean,
+): KeyRoute {
+  const route = resolveKeyRoute(mode, windowOpen, info, keymap, travelUnlocked);
+  // Opening/closing/toggling a window and arming the exit-hold are DISCRETE — one per physical
+  // press. On an auto-repeat keydown, strip them; the fight-exit hold is advanced each tick by
+  // tickEscHold, so it (and only it) still responds to a held key. preventDefault/events/mode stay.
+  if (info.repeat) { route.ui = null; route.beginEscHold = false; route.movePress = null; }
+  return route;
+}
+
+function resolveKeyRoute(
   mode: Mode, windowOpen: boolean, info: KeyInfo, keymap: Keymap, travelUnlocked: boolean,
 ): KeyRoute {
   const base: KeyRoute = {
@@ -150,7 +160,8 @@ export class Input {
     this.setKeymap(DEFAULT_KEYMAP);
     window.addEventListener('keydown', (e) => this.keydown(e));
     window.addEventListener('keyup', (e) => {
-      this.updateModHeld(e);
+      const { alt, ctrl } = normalizeModifiers(e.altKey, e.ctrlKey, e.getModifierState('AltGraph'));
+      this.updateModHeld(alt, ctrl);
       if (e.key === 'Escape') escHoldCancel(this.escHold); // releasing before the threshold cancels
       const dir = this.moveCodeToDir[e.code];
       if (dir !== undefined) this.release(dir);
@@ -171,10 +182,10 @@ export class Input {
     }
   }
 
-  /** Recompute the live combat-modifier state from an event; enqueue on change so the sim's
-   *  travelUnlocked gate tracks it (edge-triggered — no per-tick spam). */
-  private updateModHeld(e: { altKey: boolean; ctrlKey: boolean }): void {
-    const held = this.keymap.combatModifier === 'alt' ? e.altKey : e.ctrlKey;
+  /** Recompute the live combat-modifier state from already-normalized modifier flags (so AltGr
+   *  counts as Alt); enqueue on change so the sim's travelUnlocked gate tracks it (edge-triggered). */
+  private updateModHeld(alt: boolean, ctrl: boolean): void {
+    const held = this.keymap.combatModifier === 'alt' ? alt : ctrl;
     if (held !== this.modHeld) {
       this.modHeld = held;
       this.queue.push({ type: 'setTravelUnlocked', value: held });
@@ -189,21 +200,22 @@ export class Input {
 
   private keydown(e: KeyboardEvent): void {
     if (!this.enabled()) return; // char-select screen owns the keyboard (name field, etc.)
-    this.updateModHeld(e);
+    const { alt, ctrl } = normalizeModifiers(e.altKey, e.ctrlKey, e.getModifierState('AltGraph'));
+    this.updateModHeld(alt, ctrl);
     if (this.isCombatModifierKey(e.code)) e.preventDefault(); // suppress the Alt menubar / focus loss
     const route = routeKeydown(this.mode, this.windowOpen(),
-      { key: e.key, code: e.code, altKey: e.altKey, ctrlKey: e.ctrlKey, metaKey: e.metaKey },
+      { key: e.key, code: e.code, altKey: alt, ctrlKey: ctrl, metaKey: e.metaKey, repeat: e.repeat },
       this.keymap, this.modHeld);
     if (route.preventDefault) e.preventDefault();
     this.mode = route.mode;
     if (route.clearHeld && this.held.length) { this.held = []; this.pushMove(); }
-    if (route.movePress !== null && !e.repeat && !this.held.includes(route.movePress)) {
+    // routeKeydown already nulls movePress/beginEscHold on auto-repeat (discrete actions fire once
+    // per physical press), so no !e.repeat guard is needed here.
+    if (route.movePress !== null && !this.held.includes(route.movePress)) {
       this.held.push(route.movePress);
       this.pushMove();
     }
-    // Only a FRESH press arms the hold — OS auto-repeats can't, so a keydown that closed a window
-    // (and then stayed down) never rolls into an exit: the player must release and press again.
-    if (route.beginEscHold && !e.repeat) escHoldBegin(this.escHold);
+    if (route.beginEscHold) escHoldBegin(this.escHold);
     for (const ev of route.events) this.queue.push(ev);
     if (route.ui === 'toggleInventory') this.onToggleInventory();
     else if (route.ui === 'toggleCharacter') this.onToggleCharacter();

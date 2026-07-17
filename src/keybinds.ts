@@ -139,6 +139,14 @@ export function resolveAction(
 }
 
 // --- validation ---
+/** Fold a keydown's modifiers for combos: treat AltGr (Right Alt on international layouts — it
+ *  reports AltGraph, and on Windows also raises altKey/ctrlKey) as a plain Alt, and unify left/
+ *  right (altKey/ctrlKey are already side-agnostic), so Right Alt behaves exactly like Left Alt.
+ *  Note: where AltGr sets both, Ctrl+Alt combos collapse to Alt — acceptable; no default uses them. */
+export function normalizeModifiers(altKey: boolean, ctrlKey: boolean, altGraph: boolean): { alt: boolean; ctrl: boolean } {
+  return { alt: altKey || altGraph, ctrl: ctrlKey && !altGraph };
+}
+
 /** Keys owned by the hardcoded system layer — never bindable to any action. */
 export const RESERVED_CODES = new Set(['Escape', 'Enter', 'NumpadEnter', 'Tab', 'Backspace']);
 
@@ -152,11 +160,25 @@ export type ValidationResult = { ok: true; combo: Combo } | { ok: false; reason:
 const isPlainPrintable = (cap: Captured): boolean =>
   cap.key.length === 1 && !cap.alt && !cap.ctrl;
 
+// Combos the browser/OS intercept — some (Ctrl+W/T/N, Alt+F4) can't be preventDefault'd and would
+// close the tab/window. Rejected at capture so a rebind can never hijack them. Extend here.
+// (Ctrl+Shift+* is already blocked — Shift is rejected; Ctrl+Tab too — Tab is a RESERVED_CODE.)
+const BROWSER_RESERVED_CTRL = new Set([
+  'KeyW', 'KeyT', 'KeyN', 'KeyQ', 'KeyR', 'KeyL', 'KeyH', 'KeyJ', 'KeyD',
+  'Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9',
+  'PageUp', 'PageDown',
+]);
+const BROWSER_RESERVED_ALT = new Set(['F4', 'ArrowLeft', 'ArrowRight', 'Home']);
+const isBrowserReserved = (cap: Captured): boolean =>
+  (cap.ctrl && !cap.alt && BROWSER_RESERVED_CTRL.has(cap.code)) ||
+  (cap.alt && !cap.ctrl && BROWSER_RESERVED_ALT.has(cap.code));
+
 /** Validate a captured combo for an action against its class rules + conflicts.
  *  HARD BLOCK on any failure (returns the reason to show inline). */
 export function validateCapture(actionId: ActionId, cap: Captured, keymap: Keymap): ValidationResult {
   if (cap.shift || cap.meta) return { ok: false, reason: 'Use only Alt or Ctrl as a modifier.' };
   if (RESERVED_CODES.has(cap.code)) return { ok: false, reason: 'Esc, Enter, Tab and Backspace are reserved.' };
+  if (isBrowserReserved(cap)) return { ok: false, reason: 'This shortcut is reserved by your browser.' };
 
   const category = ACTIONS[actionId].category;
   if (category === 'combat' && isPlainPrintable(cap)) {
