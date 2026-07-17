@@ -209,3 +209,11 @@ files, no dead code; keep this CLAUDE.md lean.
 Content → `io_typingRPG/` (above). Presentation → one entry in the hub's
 `grid-config.json`, added by the hub owner. Do not edit hub files from this
 repo; when something changes, print a fresh ready-to-paste snippet in chat.
+
+## Orchestration folder — do not commit
+
+`orchestration/` and `.claude/skills/gp/` are a local agent-coordination
+layer (prompts, state handoffs, decision log, the `/gp` skill) that must
+NEVER be committed or pushed — they're gitignored, future sessions must not
+`git add` them or remove them from `.gitignore`, and their absence from the
+repo is correct.
