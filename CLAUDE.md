@@ -173,6 +173,30 @@ change. It contains exactly two things:
 Everything in the shipped bundle is public (view-source). **Never commit
 secrets.** This app uses no backend — saves are local-only.
 
+## ⚠️ Dev cheat codes — MUST be admin-gated before multiplayer
+
+There is a hidden, GTA-style keyboard cheat system (type `hesoyam` to set level —
+optional numeric prefix like `50hesoyam`, bare = max level `MAX_LEVEL`; type
+`baguvix` to toggle godmode). It is a passive keyboard observer that recognizes
+codes and pushes a `devCheat` `InputEvent` through the normal `update()` reducer.
+Every cheat affects only the local player's own state.
+
+- **Code lives in**: `src/keystroke-buffer.ts` (generic ring buffer),
+  `src/cheats.ts` (the pure, editable code registry + `recognize()`),
+  `src/cheat-listener.ts` (the passive `window` keydown listener, wired in
+  `src/main.ts`), and the effect logic in `src/game/sim.ts` (`applyCheat` /
+  `setLevel`) with the godmode guard in `src/game/combat.ts` (`hurtPlayer`).
+  Full reference: `docs/cheats.md`.
+
+- **THE REQUIREMENT (do not remove):** before this game is ever exposed
+  online/multiplayer in any form, cheat-code execution MUST be restricted to
+  authenticated admin users and MUST be validated server-side. The current
+  implementation is a local, single-player, fully-trusted-client dev tool with
+  zero authorization and is **NOT safe to ship as-is**. The `devCheat` event
+  flows through the same pure `update()` queue that a future authoritative
+  server would run (see "Multiplayer readiness" › Anti-cheat) — that server must
+  reject `devCheat` events from non-admin senders.
+
 ## Design / code style
 
 All UI colors are CSS variables in `src/style.css`; world-render colors live in

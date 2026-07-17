@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   arrowsPerCharsInterval, baseAttributes, effectiveAttributes, emptyStats,
-  maxHp, maxMp, moveSpeed,
+  maxHp, maxMp, moveSpeed, statPointsEarned,
 } from './attributes';
 import { CLASSES } from './classes';
 import {
@@ -10,7 +10,7 @@ import {
 } from './combat';
 import {
   BOSS_ENRAGE_TYPO_MULT, DROP_REARM_MARGIN, GOLD_PER_COIN, INV_H, INV_PAGE_H, INV_W,
-  MOVE_PER_POINT, PICKUP_RADIUS, PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX,
+  MAX_LEVEL, MOVE_PER_POINT, PICKUP_RADIUS, PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX,
   SIM_DT, XP_CURVE,
 } from './constants';
 import { addToInventory, firstFreeCell, ITEMS, rectFree } from './items';
@@ -19,13 +19,15 @@ import { isBlocked } from './map';
 import { MOBS } from './mobs';
 import { EQUIP_SLOTS } from './types';
 import { rand } from './rng';
-import { applySave, makeSave, newGame, update } from './sim';
+import { applyCheat, applySave, makeSave, newGame, setLevel, update } from './sim';
 import type { ClassId, GameState, Mob, Mode, SaveData, Vec2 } from './types';
 import { escHoldBegin, escHoldCancel, escHoldFraction, escHoldTick, newEscHold, routeKeydown } from '../input';
 import type { KeyInfo } from '../input';
 import { canSetCombatModifier, cloneKeymap, DEFAULT_KEYMAP, findConflict, validateCapture } from '../keybinds';
 import type { Captured, Keymap } from '../keybinds';
 import { topmostWindow } from '../ui/windows';
+import { KeystrokeRingBuffer } from '../keystroke-buffer';
+import { recognize } from '../cheats';
 
 /** A controlled state: player at spawn, exactly these mobs, combat synced. */
 function stateWith(mobs: { defId: string; pos: Vec2; hp?: number; shield?: boolean; shieldsUsed?: number }[]): GameState {
@@ -811,6 +813,157 @@ describe('travelUnlocked movement gate (combat-modifier unlock)', () => {
     update(s, [{ type: 'setTravelUnlocked', value: false }], SIM_DT); // release mid-hold
     expect(s.player.pos.x).toBe(x2); // stopped immediately, same tick
     expect(s.mode).toBe('fight');    // still in fight; held is untouched
+  });
+});
+
+describe('KeystrokeRingBuffer', () => {
+  it('caps at 20, evicting the oldest', () => {
+    const b = new KeystrokeRingBuffer(20);
+    for (const ch of 'abcdefghijklmnopqrstuvwxyz') b.push(ch); // 26 chars
+    expect(b.contents().length).toBe(20);
+    expect(b.contents()).toBe('ghijklmnopqrstuvwxyz'); // first 6 evicted
+  });
+
+  it('lowercases on push so HESOYAM matches', () => {
+    const b = new KeystrokeRingBuffer();
+    for (const ch of 'HESOYAM') b.push(ch);
+    expect(b.contents()).toBe('hesoyam');
+    expect(b.endsWith('hesoyam')).toBe(true);
+  });
+
+  it('is order/suffix only — no time-based behavior; clear() empties it', () => {
+    const b = new KeystrokeRingBuffer(4);
+    for (const ch of 'xhi!') b.push(ch);
+    expect(b.contents()).toBe('xhi!');
+    b.push('y'); // evicts the x
+    expect(b.contents()).toBe('hi!y');
+    b.clear();
+    expect(b.contents()).toBe('');
+  });
+});
+
+describe('cheat recognize()', () => {
+  it('bare hesoyam → setLevel with no arg', () => {
+    expect(recognize('hesoyam')).toEqual({ code: 'setLevel' });
+  });
+  it('digit-prefixed → setLevel with that N (consecutive digits immediately before)', () => {
+    expect(recognize('4hesoyam')).toEqual({ code: 'setLevel', arg: 4 });
+    expect(recognize('12hesoyam')).toEqual({ code: 'setLevel', arg: 12 });
+    expect(recognize('007hesoyam')).toEqual({ code: 'setLevel', arg: 7 });
+    expect(recognize('junk50hesoyam')).toEqual({ code: 'setLevel', arg: 50 });
+  });
+  it('a non-digit between digits and the literal → bare (no arg)', () => {
+    expect(recognize('4xhesoyam')).toEqual({ code: 'setLevel' });
+  });
+  it('baguvix → godmode, never an arg', () => {
+    expect(recognize('baguvix')).toEqual({ code: 'godmode' });
+    expect(recognize('5baguvix')).toEqual({ code: 'godmode' });
+  });
+  it('a proper prefix (or empty) does not match', () => {
+    expect(recognize('hesoya')).toBeNull();
+    expect(recognize('')).toBeNull();
+  });
+  it('typed char-by-char, 4hesoyam fires exactly once (on the final char) with arg 4', () => {
+    const b = new KeystrokeRingBuffer();
+    const fires: unknown[] = [];
+    for (const ch of '4hesoyam') { b.push(ch); const hit = recognize(b.contents()); if (hit) fires.push(hit); }
+    expect(fires).toEqual([{ code: 'setLevel', arg: 4 }]); // never fired bare at any point before completion
+    b.push('z'); // a trailing char does not re-fire
+    expect(recognize(b.contents())).toBeNull();
+  });
+});
+
+describe('setLevel / applyCheat (dev cheats)', () => {
+  it('bare (undefined arg) → MAX_LEVEL, all points unspent, no NaN', () => {
+    const s = newGame(1);
+    setLevel(s, undefined);
+    expect(s.player.level).toBe(MAX_LEVEL);
+    expect(s.player.statPoints).toBe((MAX_LEVEL - 1) * 4);
+    expect(Number.isFinite(s.player.statPoints)).toBe(true);
+    expect(s.player.stats).toEqual(emptyStats());
+  });
+
+  it('clamps to [1, MAX_LEVEL]: 0→1, -5→1, 5→5, 999→max — never NaN', () => {
+    for (const [arg, lvl] of [[0, 1], [-5, 1], [5, 5], [999, MAX_LEVEL]] as const) {
+      const s = newGame(1);
+      setLevel(s, arg);
+      expect(s.player.level).toBe(lvl);
+      expect(s.player.statPoints).toBe((lvl - 1) * 4);
+      expect(Number.isFinite(s.player.statPoints)).toBe(true);
+    }
+  });
+
+  it('grants exactly the stat points natural levelling to that level produces', () => {
+    for (const lvl of [1, 5, 10, 25, MAX_LEVEL]) {
+      const s = newGame(1);
+      setLevel(s, lvl);
+      expect(s.player.statPoints).toBe(statPointsEarned(lvl, 0, XP_CURVE(lvl)));
+    }
+  });
+
+  it('keep-build branch: a mild de-level preserves allocation and adjusts unspent', () => {
+    const s = newGame(1);
+    setLevel(s, 50);
+    s.player.stats.VIT = 10; s.player.statPoints -= 10; // simulate spending 10 points
+    setLevel(s, 40); // earned(40)=156 > spent(10) → keep build
+    expect(s.player.stats.VIT).toBe(10);
+    expect(s.player.statPoints).toBe((40 - 1) * 4 - 10); // 146
+  });
+
+  it('de-levelling below spent points respecs (reclaims allocated), never negative', () => {
+    const s = newGame(1);
+    setLevel(s, 10);
+    s.player.stats.STR = 36; s.player.statPoints = 0; // spend all 36
+    setLevel(s, 3); // earned(3)=8 < spent(36) → full respec
+    expect(s.player.stats).toEqual(emptyStats());
+    expect(s.player.statPoints).toBe(8);
+    expect(s.player.statPoints).toBeGreaterThanOrEqual(0);
+  });
+
+  it('flows through the update reducer via a devCheat event', () => {
+    const s = newGame(1);
+    update(s, [{ type: 'devCheat', code: 'setLevel', arg: 7 }], SIM_DT);
+    expect(s.player.level).toBe(7);
+  });
+
+  it('revives a dead player and re-caps vitals; emits no fx (stays invisible)', () => {
+    const s = newGame(1);
+    s.player.dead = true; s.player.hp = 0; s.fx = [];
+    setLevel(s, 20);
+    expect(s.player.dead).toBe(false);
+    expect(s.player.hp).toBe(maxHp(s.player));
+    expect(s.fx).toEqual([]);
+  });
+});
+
+describe('godmode cheat', () => {
+  it('baguvix toggles player.godmode', () => {
+    const s = newGame(1);
+    expect(s.player.godmode).toBe(false);
+    applyCheat(s, 'godmode');
+    expect(s.player.godmode).toBe(true);
+    applyCheat(s, 'godmode');
+    expect(s.player.godmode).toBe(false);
+  });
+
+  it('zeroes typo damage while consuming rng identically (guard is inside hurtPlayer)', () => {
+    const setup = (): GameState => { const s = stateWith([{ defId: 'boar', pos: NEAR }]); s.player.hp = 5000; return s; };
+    const on = setup(); on.player.godmode = true;
+    const off = setup();
+    for (let i = 0; i < 5; i++) { resolveKeystroke(on, MISS); resolveKeystroke(off, MISS); } // MISS is always a typo
+    expect(on.player.hp).toBe(5000);          // godmode blocked every hit
+    expect(off.player.hp).toBeLessThan(5000); // normal play took damage
+    expect(on.rng).toBe(off.rng);             // dodge rolls advanced the seed identically on/off
+  });
+
+  it('is not persisted (omitted from makeSave, resets to false on load)', () => {
+    const s = newGame(1);
+    s.player.godmode = true;
+    const save = makeSave(s);
+    expect('godmode' in save.player).toBe(false);
+    const fresh = newGame(1);
+    applySave(fresh, save);
+    expect(fresh.player.godmode).toBe(false);
   });
 });
 

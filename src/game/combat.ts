@@ -1,7 +1,7 @@
 // The heart of the game: per-keystroke resolution, streak → AoE radius,
 // ultimates, boss shield/enrage, XP and kills.
 import {
-  maxHp, maxMp, physCharDamage, playerAttributes, statPointsEarned, STAT_IDS,
+  maxHp, maxMp, physCharDamage, playerAttributes, recomputeStatPoints,
 } from './attributes';
 import { classOf } from './classes';
 import {
@@ -145,14 +145,16 @@ export function grantXp(state: GameState, amount: number): void {
     p.mp = maxMp(p);
     state.fx.push({ kind: 'levelup', level: p.level });
   }
-  const spent = STAT_IDS.reduce((sum, s) => sum + p.stats[s], 0);
-  p.statPoints = statPointsEarned(p.level, p.xp, XP_CURVE(p.level)) - spent;
+  recomputeStatPoints(p); // earned − spent; shared with the set-level cheat so they can't diverge
   state.dirty = true;
 }
 
 export function hurtPlayer(state: GameState, dmg: number): void {
   const p = state.player;
-  if (p.dead || dmg <= 0) return;
+  // The single player-damage choke point. godmode guarded HERE (not at the call site) so the
+  // rng-consuming meleeMitigatedDamage argument still advances state.rng identically on/off —
+  // keeping loot rolls seed-deterministic.
+  if (p.dead || dmg <= 0 || p.godmode) return;
   p.hp -= dmg;
   state.fx.push({ kind: 'hurt', pos: { ...playerWorldPos(p) }, value: dmg });
   if (p.hp <= 0) {

@@ -1,16 +1,16 @@
 // The fixed-timestep orchestrator. Pure: consumes an event queue, mutates
 // state, emits fx. A future server runs this exact function authoritatively.
-import { emptyStats, maxHp, maxMp, moveSpeed } from './attributes';
+import { emptyStats, maxHp, maxMp, moveSpeed, recomputeStatPoints, statPointsEarned, STAT_IDS } from './attributes';
 import type { StatId } from './attributes';
 import { classOf } from './classes';
 import {
-  DROP_DESPAWN_SECONDS, DROP_REARM_MARGIN, GOLD_PER_COIN, PICKUP_RADIUS, PLAYER_RADIUS,
+  DROP_DESPAWN_SECONDS, DROP_REARM_MARGIN, GOLD_PER_COIN, MAX_LEVEL, PICKUP_RADIUS, PLAYER_RADIUS, XP_CURVE,
 } from './constants';
 import { resolveKeystroke, syncCombat, tryUltimate } from './combat';
 import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize, rectFree } from './items';
 import { circleBlocked, isBlocked, SPAWN } from './map';
 import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
-import type { ClassId, EquipSlot, GameState, InputEvent, ItemStack, SaveData } from './types';
+import type { CheatCode, ClassId, EquipSlot, GameState, InputEvent, ItemStack, SaveData } from './types';
 import { DIR_VECS, dist, playerWorldPos } from './types';
 
 export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior'): GameState {
@@ -21,7 +21,7 @@ export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior
       hp: 0, mp: 0, level: 1, xp: 0, stats: emptyStats(), statPoints: 0,
       equipment: emptyEquipment(), gold: 0, leech: 1,
       inventory: [], overflow: [], invRev: 0,
-      dead: false, ultCooldown: 0, animT: 0,
+      dead: false, godmode: false, ultCooldown: 0, animT: 0,
     },
     mobs: [], drops: [], spots: SPOTS.map(() => ({ pending: [] })),
     combat: null, mode: 'travel', fireMode: 1, travelUnlocked: false, held: [], fx: [], bossKilled: false, dirty: false, nextId: 1,
@@ -48,6 +48,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
     else if (e.type === 'moveItem') moveItem(state, e.index, e.x, e.y);
     else if (e.type === 'useItem') useItem(state, e.index);
     else if (e.type === 'dropItem') dropItem(state, e.index);
+    else if (e.type === 'devCheat') applyCheat(state, e.code, e.arg);
   }
   const p = state.player;
   if (p.ultCooldown > 0) p.ultCooldown = Math.max(0, p.ultCooldown - dt);
@@ -140,6 +141,33 @@ function allocateStat(state: GameState, stat: StatId): void {
   if (p.statPoints <= 0) return;
   p.stats[stat]++;
   p.statPoints--;
+  state.dirty = true;
+}
+
+/** Apply a dev cheat's effect. The Layer-1 sink: a future console/chat frontend reaches this exact
+ *  path via the devCheat event. Client-trusted — see CLAUDE.md, MUST be admin-gated before multiplayer. */
+export function applyCheat(state: GameState, code: CheatCode, arg?: number): void {
+  if (code === 'setLevel') setLevel(state, arg);
+  else if (code === 'godmode') state.player.godmode = !state.player.godmode;
+}
+
+/** Set the player's level directly (hesoyam). No/invalid arg → MAX_LEVEL; else clamped to
+ *  [1, MAX_LEVEL] (so 0 → 1, never the NaN a 0/0 XP bar would give). Reuses the real point logic;
+ *  de-levelling below already-spent points respecs (the model's only path to reclaim allocated
+ *  points). Emits NO fx — the cheat stays invisible; persistence rides state.dirty → autosave. */
+export function setLevel(state: GameState, arg?: number): void {
+  const p = state.player;
+  const level = (arg == null || !Number.isFinite(arg))
+    ? MAX_LEVEL
+    : Math.max(1, Math.min(MAX_LEVEL, Math.floor(arg)));
+  p.level = level;
+  p.xp = 0;       // land on the level boundary; also stops a later grantXp from re-levelling
+  p.dead = false; // avoid a full-hp-but-dead zombie state
+  const earned = statPointsEarned(level, 0, XP_CURVE(level));
+  if (STAT_IDS.reduce((sum, s) => sum + p.stats[s], 0) > earned) p.stats = emptyStats(); // reclaim allocated
+  recomputeStatPoints(p); // earned − spent; ≥ 0 after the respec guard
+  p.hp = maxHp(p);
+  p.mp = maxMp(p);
   state.dirty = true;
 }
 
@@ -279,6 +307,7 @@ export function applySave(state: GameState, save: SaveData): void {
   p.stats = save.player.stats ? { ...save.player.stats } : emptyStats();
   p.statPoints = save.player.statPoints ?? 0;
   p.leech = 1; // transient — always re-init full on load (never persisted)
+  p.godmode = false; // transient — a loaded character never starts invincible
 
   if (save.v === 2) {
     p.inventory = save.player.inventory.map((s) => ({ ...s, x: s.x ?? 0, y: s.y ?? 0 }));

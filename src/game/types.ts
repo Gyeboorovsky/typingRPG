@@ -90,6 +90,7 @@ export interface Player {
   overflow: ItemStack[];         // items that didn't fit the grid (migration fallback)
   invRev: number;       // bumped on inventory change (UI rebuild hint)
   dead: boolean;
+  godmode: boolean;     // dev cheat: takes zero damage while true. Transient (not saved).
   ultCooldown: number;  // seconds
   animT: number;
 }
@@ -115,12 +116,16 @@ export type Fx =
 
 export type Mode = 'travel' | 'fight';
 
+// Dev cheat effects (semantic, not the GTA code spelling — see src/cheats.ts registry).
+export type CheatCode = 'setLevel' | 'godmode';
+
 export type InputEvent =
   | { type: 'char'; ch: string }
   | { type: 'move'; dirs: Dir[] } // currently held dirs, newest last
   | { type: 'setMode'; mode: Mode }        // travel ↔ fight (typing prompt shows only in fight)
   | { type: 'setFireMode'; fireMode: number } // bow fire mode (1..4); behavior wired later
   | { type: 'setTravelUnlocked'; value: boolean } // combat-modifier held → travel actions/move unlocked in fight
+  | { type: 'devCheat'; code: CheatCode; arg?: number } // dev cheat (hesoyam/baguvix); client-trusted — admin-gate before multiplayer
   | { type: 'ult' }
   | { type: 'respawn' }
   | { type: 'allocateStat'; stat: StatId }

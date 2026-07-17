@@ -4,7 +4,7 @@
 import { CLASSES } from './classes';
 import {
   ATK_PER_POINT, BOW_BASE_CHARS_PER_ARROW, MOVE_PER_POINT,
-  PHYS_DAMAGE_SCALE, PLAYER_SPEED, WEAPON_ILVL_DMG,
+  PHYS_DAMAGE_SCALE, PLAYER_SPEED, WEAPON_ILVL_DMG, XP_CURVE,
 } from './constants';
 import { ITEMS } from './items';
 import type { ClassId, EquipSlot, ItemStack, Player } from './types';
@@ -187,6 +187,14 @@ export const STAT_POINTS_PER_LEVEL = 4;
 export function statPointsEarned(level: number, xp: number, xpNeeded: number): number {
   const quarters = Math.min(STAT_POINTS_PER_LEVEL, Math.floor((xp / xpNeeded) * STAT_POINTS_PER_LEVEL));
   return (level - 1) * STAT_POINTS_PER_LEVEL + quarters;
+}
+
+/** Re-derive unspent stat points from absolute state (earned − spent). Idempotent, so it's correct
+ *  at any level reached by any means — natural level-up (grantXp) or a set-level cheat (setLevel),
+ *  which both call this instead of duplicating the formula. Assumes level >= 1 (xpNeeded > 0). */
+export function recomputeStatPoints(p: Player): void {
+  const spent = STAT_IDS.reduce((sum, s) => sum + p.stats[s], 0);
+  p.statPoints = statPointsEarned(p.level, p.xp, XP_CURVE(p.level)) - spent;
 }
 
 export const emptyStats = (): Record<StatId, number> => ({ VIT: 0, INT: 0, STR: 0, DEX: 0 });

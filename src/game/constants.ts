@@ -33,6 +33,7 @@ export const ULT_RADIUS_MULT = 1.5;
 // player
 export const XP_CURVE = (level: number): number => Math.round(100 * Math.pow(level, 1.5));
 export const RESPAWN_FULL = true;     // future knob: XP loss on death
+export const MAX_LEVEL = 120;         // Metin2's cap. Used ONLY as the set-level cheat's clamp — natural levelling is unbounded.
 
 // mobs
 export const LEASH_DIST = 10;         // tiles from home before mob resets

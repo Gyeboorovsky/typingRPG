@@ -4,6 +4,7 @@ import './style.css';
 import { SIM_DT } from './game/constants';
 import { applySave, newGame, update } from './game/sim';
 import type { ClassId, GameState } from './game/types';
+import { CheatListener } from './cheat-listener';
 import { Input } from './input';
 import { Renderer } from './render/renderer';
 import { isTauri, pickFileBackend, supportsFilePicker } from './save/backends';
@@ -47,6 +48,11 @@ async function boot(): Promise<void> {
   const renderer = new Renderer(ctx);
   const charSelect = new CharSelect();
   input.setKeymap(keymap);
+
+  // Hidden dev cheats (hesoyam / baguvix) — a passive keyboard observer, independent of Input,
+  // active in ALL builds. Client-trusted; see CLAUDE.md — MUST be admin-gated before multiplayer.
+  const cheats = new CheatListener((ev) => input.push(ev));
+  cheats.enabled = () => !blocked;
 
   // Options window. main.ts is the single source of truth for the keymap; the view emits
   // rebind / modifier / restore intents that we validate, persist, and push back into Input.
@@ -113,6 +119,7 @@ async function boot(): Promise<void> {
     }
     Object.assign(state, fresh);
     input.forceTravel(); // a freshly loaded character starts in travel
+    cheats.clearBuffer(); // don't let a previous character's keystrokes complete a code
     renderer.resetCamera();
     charSelect.setActiveSlot(slot);
     charSelect.closable = true;
