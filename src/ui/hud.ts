@@ -65,7 +65,7 @@ export class Hud {
     xpText: $('xp-text'),
     lvlFills: [0, 1, 2, 3].map((i) => $(`lvl-c${i}`)),
     statsBtn: $('stats-btn'),
-    promptBox: $('prompt-box'), prompt: $('prompt'),
+    promptBox: $('prompt-box'), prompt: $('prompt'), promptTag: $('prompt-tag'),
     pDone: $('p-done'), pCur: $('p-cur'), pRest: $('p-rest'),
     streak: $('streak'), radius: $('radius'), ultHint: $('ult-hint'),
     bossbar: $('bossbar'), bossName: $('boss-name'), bossFill: $('boss-fill'), bossBanner: $('boss-banner'),
@@ -214,6 +214,12 @@ export class Hud {
     const c = state.combat;
     this.set('combat', !!c, () => e.promptBox.classList.toggle('hidden', !c));
     if (c) {
+      // Practice (no-target) sessions get a distinct frame + a "no target" tag.
+      this.set('practice', c.practice, () => {
+        e.promptBox.classList.toggle('practice', c.practice);
+        e.promptTag.classList.toggle('hidden', !c.practice);
+        e.promptTag.textContent = c.practice ? 'PRACTICE — no target' : '';
+      });
       this.set('prompt', `${c.prompt}:${c.typed}`, () => {
         e.pDone.textContent = c.prompt.slice(0, c.typed);
         const cur = c.prompt[c.typed] ?? '';
@@ -236,7 +242,7 @@ export class Hud {
       this.lastFlash = c.errorFlash;
 
       const ult = classOf(p).ult;
-      const ready = c.streak >= ult.streakThreshold;
+      const ready = c.streak >= ult.streakThreshold && !c.practice; // ult is blocked without a real target
       let hint = '';
       if (ready) {
         if (p.ultCooldown > 0) hint = `${ult.name} — cooling ${p.ultCooldown.toFixed(1)}s`;

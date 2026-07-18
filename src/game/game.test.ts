@@ -10,13 +10,13 @@ import {
 } from './combat';
 import {
   BOSS_ENRAGE_TYPO_MULT, DROP_REARM_MARGIN, GOLD_PER_COIN, INV_H, INV_PAGE_H, INV_W,
-  MAX_LEVEL, MOVE_PER_POINT, PICKUP_RADIUS, PLAYER_SPEED, PROMPT_MP_REWARD, RADIUS_BASE, RADIUS_MAX,
-  SIM_DT, XP_CURVE,
+  MAX_LEVEL, MOVE_PER_POINT, PICKUP_RADIUS, PLAYER_SPEED, PROMPT_HP_REWARD_PER_TIER, PROMPT_MP_REWARD,
+  RADIUS_BASE, RADIUS_MAX, SIM_DT, XP_CURVE,
 } from './constants';
 import { addToInventory, firstFreeCell, ITEMS, rectFree } from './items';
 import { rollDrops } from './loot';
 import { isBlocked } from './map';
-import { MOBS } from './mobs';
+import { MOBS, nearestPullTarget } from './mobs';
 import { EQUIP_SLOTS } from './types';
 import { rand } from './rng';
 import { applyCheat, applySave, makeSave, newGame, setLevel, update } from './sim';
@@ -1086,22 +1086,25 @@ describe('control modes (travel / fight)', () => {
     expect(s.player.pos).toEqual(start); // stayed put while typing
   });
 
-  it('auto-exits fight to travel when the last aggroed mob dies', () => {
+  // Group B default (FIGHT_AUTOEXIT_TO_TRAVEL=false): losing the last aggroed mob
+  // drops into practice mode (fight stays open), it does NOT bounce to travel. The
+  // travel-exit branch is the constant's non-default setting (compile-time gated).
+  it('drops to practice (stays in fight) when the last aggroed mob dies', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR, hp: 1 }]); // 1 HP → one correct char kills it
     update(s, [{ type: 'char', ch: s.combat!.prompt[0] }], SIM_DT);
     expect(s.mobs.length).toBe(0);
-    expect(s.mode).toBe('travel');
-    expect(s.combat).toBeNull();
+    expect(s.mode).toBe('fight');
+    expect(s.combat!.practice).toBe(true);
   });
 
-  it('auto-exits fight to travel when the last aggroed mob leashes out of range', () => {
+  it('drops to practice when the last aggroed mob leashes out of range', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR }]);
     const m = s.mobs[0];
     m.pos = { x: m.home.x + 20, y: m.home.y }; // > LEASH_DIST from home → mobStep leashes it
     update(s, [], SIM_DT);
     expect(m.state).not.toBe('aggro'); // leashed, no longer aggroed
-    expect(s.mode).toBe('travel');
-    expect(s.combat).toBeNull();
+    expect(s.mode).toBe('fight');
+    expect(s.combat!.practice).toBe(true);
   });
 
   it('stays in fight while another mob is still aggroed', () => {
@@ -1123,13 +1126,95 @@ describe('control modes (travel / fight)', () => {
     expect(s.mobs[0].state).toBe('aggro'); // manual exit never drops aggro
   });
 
-  it('movement resumes after auto-exit without needing a fresh keypress', () => {
+  it('killing the last mob keeps you in practice — movement stays gated (no travel)', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR, hp: 1 }]);
-    s.held = [0]; // holding "up" (north — open sand road from spawn) from before the fight
+    s.held = [0]; // holding "up" from before the fight
     const start = { ...s.player.pos };
-    update(s, [{ type: 'char', ch: s.combat!.prompt[0] }], SIM_DT); // kills mob → auto-exit
-    expect(s.mode).toBe('travel');
+    update(s, [{ type: 'char', ch: s.combat!.prompt[0] }], SIM_DT); // kills mob → practice, not travel
+    expect(s.mode).toBe('fight');
+    expect(s.combat!.practice).toBe(true);
     for (let i = 0; i < 10; i++) update(s, [], SIM_DT); // no new input
-    expect(s.player.pos).not.toEqual(start); // moved: held persisted + travel re-enables stepPlayer
+    expect(s.player.pos).toEqual(start); // still typing (fight) → did not walk off
+  });
+});
+
+describe('practice mode (Group B)', () => {
+  const idleMob = (defId: string, pos: Vec2, id: number, spotIdx = id): Mob => ({
+    id, defId, pos: { ...pos }, hp: MOBS[defId].hp,
+    state: 'idle', spotIdx, home: { ...pos }, shield: false, shieldsUsed: 0,
+  });
+
+  it('entering fight with no aggroed mob enters practice, never travel', () => {
+    const s = newGame(1);
+    s.mobs = [];
+    update(s, [{ type: 'setMode', mode: 'fight' }], SIM_DT);
+    expect(s.mode).toBe('fight');
+    expect(s.combat).not.toBeNull();
+    expect(s.combat!.practice).toBe(true);
+  });
+
+  it('nearestPullTarget returns the closest idle mob within aggroRadius, else null', () => {
+    const s = newGame(7);
+    s.mobs = [];
+    expect(nearestPullTarget(s)).toBeNull();
+    s.mobs = [
+      idleMob('slime', { x: 24, y: 37 }, 1), // ~2 tiles
+      idleMob('slime', { x: 24, y: 38 }, 2), // ~1 tile — nearest
+    ];
+    expect(nearestPullTarget(s)!.id).toBe(2);
+    s.mobs = [idleMob('slime', { x: 24, y: 30 }, 1)]; // 9 tiles > aggroRadius 3
+    expect(nearestPullTarget(s)).toBeNull();
+  });
+
+  it('completing a practice prompt pulls the nearest idle mob and starts real combat at streak 0', () => {
+    const s = newGame(7);
+    s.mode = 'fight';
+    s.mobs = [
+      idleMob('slime', { x: 24, y: 37 }, 1), // farther (different spot → no pack-link)
+      idleMob('slime', { x: 24, y: 38 }, 2), // nearest
+    ];
+    syncCombat(s);
+    expect(s.combat!.practice).toBe(true);
+    s.combat!.streak = 8; // streak built while practicing
+    for (const ch of s.combat!.prompt) resolveKeystroke(s, ch); // completes → pull nearest
+    expect(s.mobs.find((m) => m.id === 2)!.state).toBe('aggro');
+    expect(s.mobs.find((m) => m.id === 1)!.state).toBe('idle');
+    syncCombat(s); // convert practice → real
+    expect(s.combat!.practice).toBe(false);
+    expect(s.combat!.streak).toBe(0); // reset on pull, no carry-over
+  });
+
+  it('completing a practice prompt with nothing in range just rerolls (stays practice)', () => {
+    const s = newGame(1);
+    s.mode = 'fight';
+    s.mobs = [];
+    syncCombat(s);
+    for (const ch of s.combat!.prompt) resolveKeystroke(s, ch);
+    expect(s.combat!.practice).toBe(true);
+    expect(s.combat!.typed).toBe(0); // fresh practice prompt
+  });
+
+  it('a completed prompt regenerates HP scaled by tier', () => {
+    const s = stateWith([{ defId: 'cultist', pos: NEAR }]); // tier 3, 80 HP → survives the prompt
+    s.player.hp = 10;
+    for (const ch of s.combat!.prompt) resolveKeystroke(s, ch);
+    expect(s.player.hp).toBe(10 + 3 * PROMPT_HP_REWARD_PER_TIER);
+  });
+
+  it('the training dummy never self-aggroes but is pull-eligible', () => {
+    const s = newGame(1);
+    s.mobs = [idleMob('dummy', { x: 24, y: 38 }, 1)]; // within aggroRadius of spawn
+    update(s, [], SIM_DT); // mobStep would auto-aggro an aggressive mob here
+    expect(s.mobs[0].state).toBe('idle');
+    expect(nearestPullTarget(s)).toBe(s.mobs[0]);
+  });
+
+  it('the training dummy grants no XP and drops nothing when killed', () => {
+    const s = stateWith([{ defId: 'dummy', pos: NEAR, hp: 1 }]);
+    const xp0 = s.player.xp;
+    resolveKeystroke(s, s.combat!.prompt[0]); // one correct char kills it
+    expect(s.mobs).toHaveLength(0);
+    expect(s.player.xp).toBe(xp0);
+    expect(s.drops).toHaveLength(0);
   });
 });

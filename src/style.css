@@ -34,6 +34,10 @@
   --acc-b: #2a9e6a;   /* gradient bottom */
   --acc-under: #1d7a4f; /* button bevel underside */
 
+  /* practice-fight marker — the frame color on the no-target practice prompt.
+     Config-style: change this one value to restyle the marker (not in Options UI). */
+  --practice-marker: #5fb0e0;
+
   /* vitals */
   --hp: #f07a7a;  --hp-b: #d84545;  --hp-under: #a12e2e;
   --mp: #6ab6ec;  --mp-b: #3d84c4;
@@ -195,6 +199,15 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   border: 1px solid var(--border);
   border-radius: var(--r-lg);
   box-shadow: var(--sh-float);
+}
+/* practice (no-target) fight: distinct frame + a small header tag */
+#prompt-box.practice {
+  border-color: var(--practice-marker);
+  box-shadow: 0 0 0 1px var(--practice-marker), 0 0 18px rgba(95, 176, 224, 0.35), var(--sh-float);
+}
+#prompt-tag {
+  font-size: 12px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;
+  color: var(--practice-marker); margin-bottom: 8px;
 }
 #prompt { font-family: var(--mono); font-size: clamp(18px, 3vw, 28px); font-weight: 700; letter-spacing: 1px; white-space: pre-wrap; }
 #p-done { color: var(--acc); text-shadow: 0 0 8px rgba(62, 201, 138, 0.4); }

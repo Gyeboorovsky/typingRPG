@@ -9,7 +9,7 @@ import type { Fx, GameState, GroundDrop, Mob, Vec2 } from '../game/types';
 import { lerp, playerWorldPos } from '../game/types';
 import { PAL } from './palette';
 import {
-  drawBoar, drawBoss, drawCultist, drawDrop, drawPlayer, drawRock, drawSlime, drawTree,
+  drawBoar, drawBoss, drawCultist, drawDrop, drawDummy, drawPlayer, drawRock, drawSlime, drawTree,
   drawWaterShimmer,
 } from './sprites';
 import { buildTerrain } from './terrain';
@@ -125,6 +125,7 @@ export class Renderer {
           const m = e.ref as Mob;
           const def = MOBS[m.defId];
           if (def.boss) drawBoss(ctx, e.sx, e.sy, t, m.hp <= def.hp * BOSS_ENRAGE_HP, m.shield);
+          else if (m.defId === 'dummy') drawDummy(ctx, e.sx, e.sy, t, m.id);
           else if (m.defId === 'slime') drawSlime(ctx, e.sx, e.sy, t, m.id);
           else if (m.defId === 'boar') drawBoar(ctx, e.sx, e.sy, t, m.id);
           else drawCultist(ctx, e.sx, e.sy, t, m.id);

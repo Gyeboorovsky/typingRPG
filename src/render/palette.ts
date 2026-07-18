@@ -20,6 +20,7 @@ export const PAL = {
   },
   hilt: '#7a5230',
 
+  dummy: '#cbab74', dummyDark: '#a3823f', dummyPost: '#7a5230', // burlap sack + wooden post
   slime: '#59c8a0', slimeDark: '#3da181', eye: '#1c2430',
   boar: '#8a5a3b', boarDark: '#6e4730', tusk: '#f0ead8', snout: '#b97f57',
   cultist: '#4a3a68', cultistDark: '#372b4f', cultistEye: '#c94fe0',

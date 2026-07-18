@@ -1,4 +1,6 @@
 // Every gameplay tuning number lives here.
+import type { Tier } from './types';
+
 export const SIM_DT = 1 / 60;
 
 // world / movement
@@ -20,7 +22,20 @@ export const BOSS_ENRAGE_HP = 0.5;    // fraction of max HP
 export const BOSS_ENRAGE_TYPO_MULT = 1.5;
 export const BOSS_SHIELD_AT = [0.66, 0.33]; // HP fractions triggering shield phases
 export const PROMPT_MP_REWARD = 5;    // mana per completed prompt
+// HP regenerated per completed prompt, scaled by the prompt's tier (tier * this):
+// tier1 → 2 HP … tier4 → 8 HP. Applies in practice AND real combat (tougher prompt
+// heals more). NOTE: unconditional single-player heal today — a future PvP mode must
+// NOT heal the attacker off an opponent's prompt; gate this when PvP lands.
+export const PROMPT_HP_REWARD_PER_TIER = 2;
 export const PROMPT_TARGET_LEN: Record<number, number> = { 1: 5, 2: 10, 3: 18, 4: 28 };
+
+// practice mode (fight with no aggroed target)
+export const PRACTICE_FALLBACK_TIER: Tier = 1; // practice word tier when no mob is in pull range
+// What happens when the last aggroed mob dies/leashes while in fight:
+//   false (default) → stay in fight, drop into practice mode (no-target prompt)
+//   true            → auto-exit to travel (the old pre-practice behavior)
+// The manual Esc-hold exit is unaffected either way.
+export const FIGHT_AUTOEXIT_TO_TRAVEL = false;
 
 // controls / input
 // NOTE: milliseconds — unlike the second-based timers elsewhere here; dt is converted where it's ticked.

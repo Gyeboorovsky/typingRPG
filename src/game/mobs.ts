@@ -9,6 +9,15 @@ import type { GameState, Mob, MobDef, SpawnSpot, Vec2 } from './types';
 import { dist, playerWorldPos } from './types';
 
 export const MOBS: Record<string, MobDef> = {
+  // Permanent non-aggressive training target: never self-aggroes, grants no XP and
+  // drops nothing (a pure typing practice dummy). Pullable in practice mode within
+  // its aggroRadius; once pulled it fights like any mob but hits softly. speed 0 =
+  // it stays planted where it spawned.
+  dummy: {
+    id: 'dummy', name: 'Training Dummy', tier: 1, hp: 40, typoDamage: 2, xp: 0,
+    speed: 0, aggroRadius: 3, aggressive: false,
+    drops: [],
+  },
   slime: {
     id: 'slime', name: 'Slime Whelp', tier: 1, hp: 20, typoDamage: 3, xp: 10,
     speed: 1.8, aggroRadius: 3,
@@ -74,6 +83,7 @@ export const MOBS: Record<string, MobDef> = {
 };
 
 export const SPOTS: SpawnSpot[] = [
+  { defId: 'dummy', center: { x: 20, y: 37 }, count: 2, radius: 1.5 }, // training dummies by the spawn plaza
   { defId: 'slime', center: { x: 15, y: 33 }, count: 5, radius: 2.5 },
   { defId: 'slime', center: { x: 31, y: 33 }, count: 5, radius: 2.5 },
   { defId: 'slime', center: { x: 23, y: 27 }, count: 5, radius: 2.5 },
@@ -109,12 +119,29 @@ export function aggroMob(state: GameState, m: Mob): void {
   }
 }
 
+/** Nearest IDLE (non-aggroed) mob within its own aggroRadius of the player, or null.
+ *  The practice-mode pull target: the aggroRadius doubles as pull range, and it stays
+ *  idle-only so already-engaged mobs aren't re-selected. Non-aggressive mobs are the
+ *  ones you can actually reach here (aggressive ones self-aggro before you pull them). */
+export function nearestPullTarget(state: GameState): Mob | null {
+  const pp = playerWorldPos(state.player);
+  let best: Mob | null = null;
+  let bestD = Infinity;
+  for (const m of state.mobs) {
+    if (m.state !== 'idle') continue;
+    const d = dist(m.pos, pp);
+    if (d <= MOBS[m.defId].aggroRadius && d < bestD) { bestD = d; best = m; }
+  }
+  return best;
+}
+
 export function mobStep(state: GameState, dt: number): void {
   const pp = playerWorldPos(state.player);
   for (const m of state.mobs) {
     const def = MOBS[m.defId];
     if (m.state === 'idle') {
-      if (!state.player.dead && dist(m.pos, pp) <= def.aggroRadius) aggroMob(state, m);
+      // Passive mobs (aggressive === false) never self-aggro — they can only be pulled.
+      if (!state.player.dead && def.aggressive !== false && dist(m.pos, pp) <= def.aggroRadius) aggroMob(state, m);
     } else if (m.state === 'aggro') {
       if (state.player.dead || dist(m.pos, m.home) > LEASH_DIST) { m.state = 'leash'; continue; }
       if (dist(m.pos, pp) > MOB_STOP_DIST) moveToward(m, pp, def.speed * dt);

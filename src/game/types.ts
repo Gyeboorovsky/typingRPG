@@ -57,6 +57,10 @@ export interface MobDef {
   hp: number; typoDamage: number; xp: number;
   speed: number; aggroRadius: number;
   boss?: boolean;
+  // Undefined/true = aggressive: self-aggroes when the player enters aggroRadius.
+  // false = passive: never self-aggroes, but its aggroRadius still gates the
+  // practice-mode PULL range (see nearestPullTarget). A pure training target.
+  aggressive?: boolean;
   drops: { itemId: string; chance: number; min: number; max: number }[];
 }
 
@@ -101,6 +105,7 @@ export interface CombatState {
   streak: number;
   tier: Tier;
   errorFlash: number; // seconds remaining
+  practice: boolean;  // true = no-target practice session (empty aggro list); see syncCombat
 }
 
 // Transient render/UI events emitted by the sim, drained each frame.

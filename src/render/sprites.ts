@@ -246,6 +246,42 @@ export function drawSlime(ctx: CanvasRenderingContext2D, sx: number, sy: number,
   ctx.fill();
 }
 
+/** A wooden training dummy: a planted post, crossbar arms and a burlap sack body
+ *  with a painted target X. Barely animated (a slow idle sway) — it's inert scenery
+ *  you type at until pulled. */
+export function drawDummy(ctx: CanvasRenderingContext2D, sx: number, sy: number, t: number, id: number): void {
+  const sway = Math.sin(t * 1.3 + id) * 0.6;
+  drawShadow(ctx, sx, sy + 1, 10);
+  ctx.strokeStyle = PAL.dummyPost; // post
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(sx, sy);
+  ctx.lineTo(sx + sway, sy - 30);
+  ctx.stroke();
+  ctx.lineWidth = 3; // crossbar arms
+  ctx.beginPath();
+  ctx.moveTo(sx - 10 + sway, sy - 21);
+  ctx.lineTo(sx + 10 + sway, sy - 21);
+  ctx.stroke();
+  ctx.fillStyle = PAL.dummy; // burlap body
+  ctx.beginPath();
+  ctx.ellipse(sx + sway, sy - 16, 8, 11, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = PAL.dummyDark; // belt band
+  ctx.fillRect(sx - 8 + sway, sy - 15, 16, 3);
+  ctx.fillStyle = PAL.dummy; // sack head
+  ctx.beginPath();
+  ctx.arc(sx + sway, sy - 30, 5.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = PAL.dummyDark; // painted target X on the face
+  ctx.lineWidth = 1.4;
+  ctx.beginPath();
+  ctx.moveTo(sx - 3 + sway, sy - 32); ctx.lineTo(sx + 3 + sway, sy - 28);
+  ctx.moveTo(sx + 3 + sway, sy - 32); ctx.lineTo(sx - 3 + sway, sy - 28);
+  ctx.stroke();
+  ctx.lineWidth = 1;
+}
+
 export function drawBoar(ctx: CanvasRenderingContext2D, sx: number, sy: number, t: number, id: number): void {
   const bounce = Math.sin(t * 5 + id) * 0.8;
   const y = sy + bounce;
