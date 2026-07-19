@@ -133,6 +133,39 @@ Checked in order:
 - Test suite: 130 pure vitest cases (`src/game/game.test.ts`), no jsdom — DOM/visual
   behavior is NOT auto-testable and always needs a manual `[V]` check.
 
+## Combat rework — decisions locked so far (2026-07-19)
+
+From the user's answers to `docs/open/combat-aggro-targeting.md`:
+
+- **Aggro has exactly TWO paths, nothing else:** (1) damage-aggro — a mob aggroes
+  whoever damages it (applies to every mob; every mob retaliates when hit — NO
+  pacifist/`retaliates` flag for now); (2) proximity-aggro — only mobs with
+  `aggressive: true` self-aggro when the player enters their aggro radius. No aggro
+  from ring presence, prompt completion, or walking near non-aggressive mobs.
+- **Targeting system is core now** (promoted from `docs/future-target-indicators.md`),
+  minimal version: `combat.targets` in state + a simple triangle indicator renderer.
+  **Indicator colors must be config-driven and support different colors per state in
+  the future** — never hardcoded.
+- **Sword shows NO target triangles initially** (it hits everything in the ring). But
+  a single "skill target" concept must exist in the design anyway: directed skills
+  (coming later) need an indicator showing who the skill would hit — even with a
+  sword equipped.
+- **Bow target selection: automatic — nearest at acquisition — then PINNED until the
+  target dies.** Manual switching via two rebindable combat actions (switch target
+  left / right); defaults pending a keybind-conflict question (Alt+Q currently =
+  exitFight). NO mouse click-override.
+- **Target recomputation is event-driven only** (target death, target left range,
+  mode/weapon change, manual switch) — never per-frame; implementation kept
+  configurable/open to future modification (design delegated to Claude Code, user
+  approved the direction).
+- **Target dies mid-word → indicator jumps to the next target, the prompt does NOT
+  reset.**
+- **Max simultaneous targets** resolved by one function
+  `resolveMaxTargets(weapon, mode, passives)` — today returns a weapon/mode config
+  constant; passives plug in later in that one place.
+- **Candidate ordering:** each mode defines a sort function; take the first
+  `maxTargets` (design delegated to Claude Code, user approved).
+
 ## Areas under re-decision (do not treat the above as final there)
 
 The combat rework (`docs/open/combat-*.md`) is re-deciding: aggro rules, targeting
