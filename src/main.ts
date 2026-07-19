@@ -95,6 +95,7 @@ async function boot(): Promise<void> {
   input.onOpenOptions = () => { if (!blocked) hud.openOptions(keymap); };
   input.onCloseTopWindow = () => { if (charSelect.isOpen) { charSelect.close(); return; } hud.closeTopWindow(); };
   document.getElementById('options-open-btn')!.addEventListener('click', () => { if (!blocked) hud.openOptions(keymap); });
+  document.getElementById('inv-open-btn')!.addEventListener('click', () => { if (!blocked) hud.toggleInventory(state); });
   hud.onAllocateStat = (stat) => input.push({ type: 'allocateStat', stat });
   hud.onEquip = (index) => input.push({ type: 'equip', index });
   hud.onUnequip = (slot, x, y) => input.push({ type: 'unequip', slot, x, y });
@@ -147,7 +148,8 @@ async function boot(): Promise<void> {
       const backend = await pickFileBackend();
       if (backend) {
         saver.addFileBackend(backend, state);
-        saveBtn.textContent = '💾 file linked';
+        saveBtn.classList.add('linked'); // keep the square icon; show linked state via the frame
+        saveBtn.title = 'Save file linked';
       }
     });
   }

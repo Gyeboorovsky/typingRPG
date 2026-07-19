@@ -71,6 +71,24 @@
 
   --font: 'Nunito', system-ui, 'Segoe UI', sans-serif;
   --mono: 'Cascadia Code', Consolas, monospace;
+
+  /* ---- HUD control bar (bottom-right square icon buttons) --------------
+     One config for the corner buttons: size / icon / spacing / corner inset.
+     Scaled per screen size in the media queries below — change values here,
+     not on the buttons themselves. */
+  --ctl-size: 44px;          /* square button side */
+  --ctl-icon: 20px;          /* emoji glyph size */
+  --ctl-radius: var(--r-sm); /* button corner radius */
+  --ctl-gap: 10px;           /* space between buttons */
+  --ctl-inset: 14px;         /* distance from the screen corner */
+}
+
+/* HUD control-bar responsive scale (see --ctl-* above) */
+@media (max-width: 640px) {
+  :root { --ctl-size: 40px; --ctl-icon: 18px; --ctl-gap: 8px; --ctl-inset: 10px; }
+}
+@media (max-width: 400px) {
+  :root { --ctl-size: 36px; --ctl-icon: 16px; --ctl-gap: 6px; --ctl-inset: 8px; }
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -248,18 +266,21 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
 /* ============================================================
    CORNER  (save status + neutral beveled buttons)
    ============================================================ */
-#corner { position: absolute; bottom: 14px; right: 14px; display: flex; align-items: center; gap: 10px; }
+#corner { position: absolute; bottom: var(--ctl-inset); right: var(--ctl-inset); display: flex; align-items: center; gap: var(--ctl-gap); }
 #save-dot { color: var(--acc); font-size: 11px; filter: drop-shadow(0 0 4px rgba(62, 201, 138, 0.6)); }
 #save-dot.dirty { color: var(--dim); filter: none; }
-#save-file, #cs-open-btn, #stats-open-btn, #options-open-btn {
-  color: var(--text); border: 1px solid var(--border-lt); border-radius: 10px;
-  padding: 7px 14px; font-size: 12px; font-weight: 900; cursor: pointer;
+#save-file, #cs-open-btn, #stats-open-btn, #inv-open-btn, #options-open-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: var(--ctl-size); height: var(--ctl-size); padding: 0;
+  font-size: var(--ctl-icon); line-height: 1;
+  color: var(--text); border: 1px solid var(--border-lt); border-radius: var(--ctl-radius); cursor: pointer;
   background: linear-gradient(180deg, #2b3941, #212d34);
   box-shadow: 0 3px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08);
   transition: transform 0.1s, filter 0.1s;
 }
-#save-file:hover, #cs-open-btn:hover, #stats-open-btn:hover, #options-open-btn:hover { filter: brightness(1.12); }
-#save-file:active, #cs-open-btn:active, #stats-open-btn:active, #options-open-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+#save-file:hover, #cs-open-btn:hover, #stats-open-btn:hover, #inv-open-btn:hover, #options-open-btn:hover { filter: brightness(1.12); }
+#save-file:active, #cs-open-btn:active, #stats-open-btn:active, #inv-open-btn:active, #options-open-btn:active { transform: translateY(2px); box-shadow: 0 1px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08); }
+#save-file.linked { border-color: var(--acc); box-shadow: 0 3px 0 #131b1f, inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 0 8px rgba(62, 201, 138, 0.4); }
 
 /* ============================================================
    CHARACTER SELECT  (full-screen picker — create / switch / delete)
