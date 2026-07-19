@@ -98,6 +98,14 @@ function resolveKeyRoute(
   if (mode === 'travel') {
     const id = resolveAction(ev, keymap, ['travel', 'enterFight'], null);
     if (id) return routeForAction(base, id);
+    // Combat-modifier + travel key works the SAME in travel as in fight's unlocked branch:
+    // Alt+WSAD moves. Swallow any other combat-modifier combo so the browser doesn't grab it
+    // (e.g. Alt+D focusing the address bar).
+    if (travelUnlocked) {
+      const travelId = resolveAction(ev, keymap, ['travel'], keymap.combatModifier);
+      if (travelId) return routeForAction(base, travelId);
+      return { ...base, preventDefault: true };
+    }
     return base; // unmatched in travel → inert (letters don't type)
   }
 

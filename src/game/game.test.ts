@@ -635,6 +635,19 @@ describe('routeKeydown (pure keystroke router)', () => {
     expect(q.events).toEqual([]); // letters don't type in travel
   });
 
+  it('travel: combat-modifier + WSAD still moves (parity with fight), swallowing the combo', () => {
+    // Alt+D in travel resolves to movement (not the browser's address-bar shortcut).
+    const moved = r('travel', false, k({ code: 'KeyD', key: 'd', altKey: true }), true);
+    expect(moved.movePress).toBe(1); // right
+    expect(moved.preventDefault).toBe(true);
+    // A modifier combo that maps to no travel action is still swallowed (preventDefault, no action).
+    const swallowed = r('travel', false, k({ code: 'KeyP', key: 'p', altKey: true }), true);
+    expect(swallowed.movePress).toBeNull();
+    expect(swallowed.preventDefault).toBe(true);
+    // Without the modifier held, an unbound letter stays inert (no preventDefault).
+    expect(r('travel', false, k({ code: 'KeyP', key: 'p' })).preventDefault).toBe(false);
+  });
+
   it('travel: i/c toggle windows; Tab toggles inventory (hardcoded system key)', () => {
     expect(r('travel', false, k({ code: 'KeyI', key: 'i' })).ui).toBe('toggleInventory');
     expect(r('travel', false, k({ code: 'KeyC', key: 'c' })).ui).toBe('toggleCharacter');
