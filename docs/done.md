@@ -4,7 +4,7 @@
 > deleted, its one-line summary lands here. Seeded 2026-07-19 from git history (the
 > pre-restructure era in condensed form).
 
-- 2026-07-19 — Docs restructure: docs-driven workflow, orchestration layer removed — (this commit)
+- 2026-07-19 — Docs restructure: docs-driven workflow, orchestration layer removed — `372c501` + `655debe`
 - 2026-07-19 — UI: square emoji control-bar buttons + real inventory button — `689ee28`
 - 2026-07-19 — Fix: combat-modifier + WSAD moves in travel too (Alt+D no longer focuses address bar) — `ed5b911`
 - 2026-07-19 — Unified combat mode with a dynamic AoE ring (superseded practice mode + auto-exit) — `826653f`
