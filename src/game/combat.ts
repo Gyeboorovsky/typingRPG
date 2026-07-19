@@ -1,16 +1,16 @@
-// The heart of the game: per-keystroke resolution, streak → AoE radius,
-// ultimates, boss shield/enrage, XP and kills.
+// The heart of the game: per-keystroke resolution, the dynamic AoE ring,
+// aggro-on-hit, ultimates, boss shield/enrage, XP and kills.
 import {
   maxHp, maxMp, physCharDamage, playerAttributes, recomputeStatPoints,
 } from './attributes';
 import { classOf } from './classes';
 import {
-  BOSS_ENRAGE_HP, BOSS_ENRAGE_TYPO_MULT, BOSS_SHIELD_AT, DEFENSE_K,
-  FIGHT_AUTOEXIT_TO_TRAVEL, PRACTICE_FALLBACK_TIER, PROMPT_HP_REWARD_PER_TIER, PROMPT_MP_REWARD,
-  RADIUS_BASE, RADIUS_MAX, RADIUS_PER_STREAK, ULT_DAMAGE, ULT_RADIUS_MULT, XP_CURVE,
+  AOE_DECAY_DELAY, AOE_DECAY_PER_SEC, AOE_DROP_ON_MISS, AOE_GROWTH_PER_CHAR, AOE_MAX, AOE_MIN,
+  BOSS_ENRAGE_HP, BOSS_ENRAGE_TYPO_MULT, BOSS_SHIELD_AT, CHILL_FALLBACK_TIER, DEFENSE_K,
+  PROMPT_HP_REWARD_PER_TIER, PROMPT_MP_REWARD, ULT_DAMAGE, ULT_RADIUS_MULT, XP_CURVE,
 } from './constants';
 import { rollDrops } from './loot';
-import { aggroMob, MOBS, nearestPullTarget, respawnDelayFor } from './mobs';
+import { aggroMob, MOBS, respawnDelayFor } from './mobs';
 import { rand } from './rng';
 import { promptFor } from './words';
 import type { GameState, Mob, Player, Tier } from './types';
@@ -30,47 +30,53 @@ export function meleeMitigatedDamage(state: GameState, raw: number): number {
   return Math.round(raw * DEFENSE_K / (DEFENSE_K + attrs.defense));
 }
 
-export const radiusFor = (streak: number): number =>
-  Math.min(RADIUS_BASE + RADIUS_PER_STREAK * streak, RADIUS_MAX);
-
 const aggroed = (state: GameState): Mob[] => state.mobs.filter((m) => m.state === 'aggro');
 
-/** Per-tick combat lifecycle. Runs every tick (single pass, no allocation).
- *  With no aggroed target this yields a PRACTICE prompt (fight stays open) rather
- *  than kicking the player out — auto-exit is edge-triggered via the `practice`
- *  flag: only a real fight collapsing (non-practice combat → empty aggro) can leave,
- *  and only when FIGHT_AUTOEXIT_TO_TRAVEL is set. A steady empty aggro list (practice)
- *  never exits. */
+/** True while at least one mob sits inside the current damage ring (the "Combat"
+ *  state — your next keystroke can harm it). */
+export const targetInRange = (state: GameState): boolean => {
+  const c = state.combat;
+  if (!c) return false;
+  const pp = playerWorldPos(state.player);
+  return state.mobs.some((m) => dist(m.pos, pp) <= c.aoe);
+};
+
+/** Leave combat entirely — the single "end the fight" entry point any module can
+ *  call (Esc-hold today; scripted triggers later). setMode('travel') routes here. */
+export function exitFight(state: GameState): void {
+  state.mode = 'travel';
+  state.combat = null;
+}
+
+/** Per-tick combat lifecycle. Combat is ONE state: it exists whenever the player is
+ *  alive and in fight mode. There is no separate practice mode and no auto-exit — you
+ *  leave only via exitFight(). The Chill/Warning/Combat distinction is derived for the
+ *  HUD, not stored here. The combat object (and its ring) persists across target
+ *  changes; only the word tier/prompt update when a tougher mob engages. */
 export function syncCombat(state: GameState): void {
-  if (state.mode !== 'fight') { state.combat = null; return; } // prompt shows only in fight mode
+  if (state.mode !== 'fight' || state.player.dead) { state.combat = null; return; }
   let tier = 0;
   for (const m of state.mobs)
     if (m.state === 'aggro' && MOBS[m.defId].tier > tier) tier = MOBS[m.defId].tier;
+  const t = (tier || CHILL_FALLBACK_TIER) as Tier;
 
-  if (tier === 0) { // no aggroed target → practice (or configured auto-exit)
-    if (state.combat && !state.combat.practice && FIGHT_AUTOEXIT_TO_TRAVEL) {
-      state.mode = 'travel'; state.combat = null; return; // real fight collapsed → leave fight
-    }
-    // Practice word tier tracks the nearest pullable mob (tough mob → tough words),
-    // falling back when nothing is in pull range; re-rolls when that tier changes.
-    const pull = nearestPullTarget(state);
-    const pTier = (pull ? MOBS[pull.defId].tier : PRACTICE_FALLBACK_TIER) as Tier;
-    if (!state.combat || !state.combat.practice) { // enter practice (fresh, or real→practice)
-      state.combat = { prompt: promptFor(state, pTier), typed: 0, streak: 0, tier: pTier, errorFlash: 0, practice: true };
-    } else if (pTier !== state.combat.tier) {
-      state.combat.tier = pTier;
-      newPrompt(state);
-    }
-    return;
-  }
-
-  // tier > 0: real combat
-  if (!state.combat || state.combat.practice) { // fresh fight OR practice→real pull (streak resets here)
-    state.combat = { prompt: promptFor(state, tier as Tier), typed: 0, streak: 0, tier: tier as Tier, errorFlash: 0, practice: false };
-  } else if (tier > state.combat.tier) { // a harder mob joined — harder words
-    state.combat.tier = tier as Tier;
+  if (!state.combat) {
+    state.combat = { prompt: promptFor(state, t), typed: 0, streak: 0, tier: t, errorFlash: 0, aoe: AOE_MIN, idleTime: 0 };
+  } else if (t > state.combat.tier) { // a tougher mob engaged — harder words (never downgrade mid-prompt)
+    state.combat.tier = t;
     newPrompt(state);
   }
+}
+
+/** Advance the ring's idle decay one tick. The ring shrinks toward AOE_MIN once the
+ *  player has stopped typing for AOE_DECAY_DELAY; typing (resolveKeystroke) resets the
+ *  idle timer and grows/drops the ring. */
+export function stepCombatRing(state: GameState, dt: number): void {
+  const c = state.combat;
+  if (!c) return;
+  c.idleTime += dt;
+  if (c.idleTime >= AOE_DECAY_DELAY)
+    c.aoe = Math.max(c.aoe - AOE_DECAY_PER_SEC * dt, AOE_MIN);
 }
 
 function newPrompt(state: GameState): void {
@@ -84,28 +90,36 @@ export function resolveKeystroke(state: GameState, ch: string): void {
   const c = state.combat;
   const p = state.player;
   if (!c || p.dead) return;
-  const ag = aggroed(state); // one scan per keystroke, shared with completion/typo
+  c.idleTime = 0; // any keystroke counts as activity → pauses the ring's idle decay
   if (ch === c.prompt[c.typed]) {
     c.typed++;
-    c.streak++;
+    c.aoe = Math.min(c.aoe + AOE_GROWTH_PER_CHAR, AOE_MAX); // correct char grows the ring
     const dmg = typingDamage(p);
-    const r = radiusFor(c.streak);
     const pp = playerWorldPos(p);
-    for (const m of ag) if (dist(m.pos, pp) <= r) damageMob(state, m, dmg);
-    if (state.combat && c.typed >= c.prompt.length) completePrompt(state, ag);
+    // Damage EVERY mob inside the ring (not just aggroed ones); a hit pulls the mob
+    // and its pack (they start walking in). Snapshot first so killMob's splice is safe.
+    const targets = state.mobs.filter((m) => dist(m.pos, pp) <= c.aoe);
+    for (const m of targets) {
+      if (m.state !== 'aggro') aggroMob(state, m);
+      damageMob(state, m, dmg);
+    }
+    // Streak (ult charge) builds only while a target is in range; empty range resets it.
+    c.streak = targets.length > 0 ? c.streak + 1 : 0;
+    if (state.combat && c.typed >= c.prompt.length) completePrompt(state, aggroed(state));
   } else {
-    typo(state, ag);
+    c.aoe = Math.max(c.aoe * (1 - AOE_DROP_ON_MISS), AOE_MIN); // a miss shrinks the ring
+    typo(state, aggroed(state));
   }
 }
 
-// Both take the keystroke's aggro snapshot: mobs killed by the damage loop have
+// `ag` is the keystroke's aggro snapshot: mobs killed by the damage loop have
 // shield=false (shielded mobs are unkillable), so the shield passes see the
 // same set a fresh filter would.
 function completePrompt(state: GameState, ag: Mob[]): void {
   const p = state.player;
   const c = state.combat!;
-  // A completed prompt regenerates mana AND HP (HP scaled by tier). Applies in
-  // practice and real combat alike — see PROMPT_HP_REWARD_PER_TIER for the PvP caveat.
+  // A completed prompt regenerates mana AND HP (HP scaled by tier).
+  // See PROMPT_HP_REWARD_PER_TIER for the PvP caveat.
   p.mp = Math.min(p.mp + PROMPT_MP_REWARD, maxMp(p));
   p.hp = Math.min(p.hp + c.tier * PROMPT_HP_REWARD_PER_TIER, maxHp(p));
   for (const m of ag) {
@@ -113,13 +127,6 @@ function completePrompt(state: GameState, ag: Mob[]): void {
       m.shield = false;
       state.fx.push({ kind: 'shieldbreak', pos: { ...m.pos } });
     }
-  }
-  // Practice pull: completing a practice prompt aggroes the nearest idle in-range mob
-  // (of any kind — a passive one is simply the one still idle). syncCombat converts
-  // practice→real this same tick, resetting the streak built during practice.
-  if (c.practice) {
-    const target = nearestPullTarget(state);
-    if (target) { aggroMob(state, target); return; }
   }
   newPrompt(state);
 }
@@ -205,15 +212,22 @@ export function hurtPlayer(state: GameState, dmg: number): void {
 export function tryUltimate(state: GameState): void {
   const c = state.combat;
   const p = state.player;
-  if (!c || c.practice || p.dead || p.ultCooldown > 0) return; // no ult without a real target
+  if (!c || p.dead || p.ultCooldown > 0) return;
+  // Need a real target: something aggroed or already inside the ring. Otherwise the
+  // ult would whiff and waste mana (streak can linger at threshold after a clear).
+  if (!targetInRange(state) && !state.mobs.some((m) => m.state === 'aggro')) return;
   const ult = classOf(p).ult;
   if (c.streak < ult.streakThreshold || p.mp < ult.manaCost) return;
   p.mp -= ult.manaCost;
   p.ultCooldown = ult.cooldown;
   const pp = playerWorldPos(p);
-  const r = radiusFor(c.streak) * ULT_RADIUS_MULT;
+  const r = c.aoe * ULT_RADIUS_MULT;
   // Every ult id currently resolves to the Whirlwind effect; per-class
   // effects switch on classOf(p).ult.id here when the other classes land.
-  for (const m of aggroed(state)) if (dist(m.pos, pp) <= r) damageMob(state, m, ULT_DAMAGE);
+  const targets = state.mobs.filter((m) => dist(m.pos, pp) <= r);
+  for (const m of targets) {
+    if (m.state !== 'aggro') aggroMob(state, m);
+    damageMob(state, m, ULT_DAMAGE);
+  }
   state.fx.push({ kind: 'ult', pos: { ...pp }, radius: r });
 }

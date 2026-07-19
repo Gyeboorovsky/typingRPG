@@ -164,6 +164,7 @@ async function boot(): Promise<void> {
   function frame(now: number): void {
     acc += Math.min(now - last, 100); // clamp huge gaps (tab suspend)
     last = now;
+    const prevMode = state.mode; // capture before stepping, to detect a sim-driven fight→travel
     let steps = 0;
     while (acc >= STEP_MS && steps < 5) {
       // Tick the Esc hold-to-exit BEFORE draining, so a threshold-crossing forceTravel() lands its
@@ -174,10 +175,11 @@ async function boot(): Promise<void> {
       acc -= STEP_MS;
     }
     if (steps === 5) acc = 0; // spiral-of-death guard
-    // Keep Input's optimistic mode aligned with the sim after each tick: death and auto-exit
-    // (last aggroed mob gone) both drop the sim to travel. forceTravel no-ops when already
-    // aligned, so calling it every travel frame costs nothing.
-    if (!blocked && state.mode === 'travel') input.forceTravel();
+    // Keep Input's optimistic mode aligned when the SIM itself leaves fight (a module calling
+    // exitFight). EDGE-triggered (fight→travel this frame only) — a blanket "sim is travel"
+    // check would enqueue a setMode:'travel' on a zero-step frame and cancel a just-pressed
+    // enter-fight still sitting undrained in the queue (the "press Space twice" bug).
+    if (!blocked && prevMode === 'fight' && state.mode === 'travel') input.forceTravel();
     const fx = state.fx;
     state.fx = [];
     if (!blocked) {

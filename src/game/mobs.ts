@@ -119,22 +119,6 @@ export function aggroMob(state: GameState, m: Mob): void {
   }
 }
 
-/** Nearest IDLE (non-aggroed) mob within its own aggroRadius of the player, or null.
- *  The practice-mode pull target: the aggroRadius doubles as pull range, and it stays
- *  idle-only so already-engaged mobs aren't re-selected. Non-aggressive mobs are the
- *  ones you can actually reach here (aggressive ones self-aggro before you pull them). */
-export function nearestPullTarget(state: GameState): Mob | null {
-  const pp = playerWorldPos(state.player);
-  let best: Mob | null = null;
-  let bestD = Infinity;
-  for (const m of state.mobs) {
-    if (m.state !== 'idle') continue;
-    const d = dist(m.pos, pp);
-    if (d <= MOBS[m.defId].aggroRadius && d < bestD) { bestD = d; best = m; }
-  }
-  return best;
-}
-
 export function mobStep(state: GameState, dt: number): void {
   const pp = playerWorldPos(state.player);
   for (const m of state.mobs) {

@@ -6,7 +6,7 @@ import { classOf } from './classes';
 import {
   DROP_DESPAWN_SECONDS, DROP_REARM_MARGIN, GOLD_PER_COIN, MAX_LEVEL, PICKUP_RADIUS, PLAYER_RADIUS, XP_CURVE,
 } from './constants';
-import { resolveKeystroke, syncCombat, tryUltimate } from './combat';
+import { exitFight, resolveKeystroke, stepCombatRing, syncCombat, tryUltimate } from './combat';
 import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize, rectFree } from './items';
 import { circleBlocked, isBlocked, SPAWN } from './map';
 import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
@@ -59,16 +59,17 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
   respawnStep(state, dt);
   stepDrops(state, dt);
   syncCombat(state);
+  stepCombatRing(state, dt); // ring idle-decay, after syncCombat has ensured combat exists
   regen(state, dt);
 }
 
 /** Enter/leave typing-combat. Entering fight builds the prompt now (via syncCombat) so
- *  keystrokes queued in the same event batch land; leaving hides it immediately. Aggro is
- *  untouched either way — mobs keep chasing/attacking regardless of the player's mode. */
+ *  keystrokes queued in the same event batch land; leaving routes through exitFight (the
+ *  shared "end the fight" path). Aggro is untouched either way — mobs keep chasing/attacking
+ *  regardless of the player's mode. */
 function setMode(state: GameState, mode: GameState['mode']): void {
-  state.mode = mode;
-  if (mode === 'fight') syncCombat(state);
-  else state.combat = null;
+  if (mode === 'fight') { state.mode = 'fight'; syncCombat(state); }
+  else exitFight(state);
 }
 
 /** Free continuous movement: held keys sum to a direction vector (diagonals included).

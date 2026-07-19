@@ -4,10 +4,10 @@
 import { maxHp, maxMp, playerAttributes, STAT_IDS } from '../game/attributes';
 import type { AttributeId, StatId } from '../game/attributes';
 import { classOf } from '../game/classes';
-import { radiusFor } from '../game/combat';
 import { INV_PAGE_H, INV_W, XP_CURVE } from '../game/constants';
 import { firstFreeCell, ITEMS, itemSize, rectFree } from '../game/items';
 import { MOBS } from '../game/mobs';
+import { dist } from '../game/types';
 import type { EquipSlot, Fx, GameState, ItemStack, Player } from '../game/types';
 import type { Keymap } from '../keybinds';
 import { topmostWindow } from './windows';
@@ -214,11 +214,21 @@ export class Hud {
     const c = state.combat;
     this.set('combat', !!c, () => e.promptBox.classList.toggle('hidden', !c));
     if (c) {
-      // Practice (no-target) sessions get a distinct frame + a "no target" tag.
-      this.set('practice', c.practice, () => {
-        e.promptBox.classList.toggle('practice', c.practice);
-        e.promptTag.classList.toggle('hidden', !c.practice);
-        e.promptTag.textContent = c.practice ? 'PRACTICE — no target' : '';
+      // Derived visual state (display only — mechanically one combat state):
+      //   combat  = a mob is inside the ring → next keystroke can harm it (red)
+      //   warning = mobs aggroed/chasing but none in the ring yet (yellow)
+      //   chill   = nothing engaged (blue)
+      const pp = p.pos;
+      const inRange = state.mobs.some((m) => dist(m.pos, pp) <= c.aoe);
+      const anyAggro = state.mobs.some((m) => m.state === 'aggro');
+      const fs = inRange ? 'combat' : anyAggro ? 'warning' : 'chill';
+      this.set('fightstate', fs, () => {
+        e.promptTag.classList.remove('hidden');
+        e.promptBox.classList.toggle('chill', fs === 'chill');
+        e.promptBox.classList.toggle('warning', fs === 'warning');
+        e.promptBox.classList.toggle('combat', fs === 'combat');
+        e.promptTag.textContent = fs === 'chill' ? 'CHILL — no target'
+          : fs === 'warning' ? 'WARNING — incoming!' : 'COMBAT';
       });
       this.set('prompt', `${c.prompt}:${c.typed}`, () => {
         e.pDone.textContent = c.prompt.slice(0, c.typed);
@@ -229,8 +239,8 @@ export class Hud {
       this.set('streak', c.streak, () => {
         e.streak.innerHTML = `Streak <b>${c.streak}</b>`;
       });
-      this.set('radius', radiusFor(c.streak).toFixed(2), () => {
-        e.radius.textContent = `AoE ${radiusFor(c.streak).toFixed(1)} tiles`;
+      this.set('radius', c.aoe.toFixed(2), () => {
+        e.radius.textContent = `AoE ${c.aoe.toFixed(1)} tiles`;
       });
       if (c.errorFlash > this.lastFlash) { // fresh typo → retrigger shake
         e.prompt.classList.remove('shake');
@@ -242,7 +252,7 @@ export class Hud {
       this.lastFlash = c.errorFlash;
 
       const ult = classOf(p).ult;
-      const ready = c.streak >= ult.streakThreshold && !c.practice; // ult is blocked without a real target
+      const ready = c.streak >= ult.streakThreshold && (inRange || anyAggro); // needs a real target
       let hint = '';
       if (ready) {
         if (p.ultCooldown > 0) hint = `${ult.name} — cooling ${p.ultCooldown.toFixed(1)}s`;

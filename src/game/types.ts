@@ -58,8 +58,8 @@ export interface MobDef {
   speed: number; aggroRadius: number;
   boss?: boolean;
   // Undefined/true = aggressive: self-aggroes when the player enters aggroRadius.
-  // false = passive: never self-aggroes, but its aggroRadius still gates the
-  // practice-mode PULL range (see nearestPullTarget). A pure training target.
+  // false = passive: never self-aggroes; only ever engages when hit by the AoE
+  // ring (a pure training target that stays put until you attack it).
   aggressive?: boolean;
   drops: { itemId: string; chance: number; min: number; max: number }[];
 }
@@ -102,10 +102,11 @@ export interface Player {
 export interface CombatState {
   prompt: string;
   typed: number;   // correct chars so far
-  streak: number;
+  streak: number;  // consecutive correct chars WHILE a target is in the ring; drives the ultimate
   tier: Tier;
   errorFlash: number; // seconds remaining
-  practice: boolean;  // true = no-target practice session (empty aggro list); see syncCombat
+  aoe: number;     // current damage-ring radius (tiles); grows on typing, decays when idle, drops on a miss
+  idleTime: number; // seconds since the last keystroke (drives the ring's idle decay)
 }
 
 // Transient render/UI events emitted by the sim, drained each frame.

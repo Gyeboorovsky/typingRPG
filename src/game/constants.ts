@@ -12,9 +12,15 @@ export const CAMERA_LERP = 0.15;
 export const MOVE_PER_POINT = 0.02;   // movementSpeed above class base scales PLAYER_SPEED 2%/point (clamped 0.6–1.8×)
 
 // combat / typing
-export const RADIUS_BASE = 1.5;       // damage radius at streak 0 (tiles)
-export const RADIUS_PER_STREAK = 0.05;
-export const RADIUS_MAX = 5.0;
+// AoE damage-ring dynamics (tiles). The ring is a live value on CombatState.aoe:
+// it grows as you type, shrinks when you stop, and drops on a miss — decoupled
+// from `streak` (which now only drives the ultimate).
+export const AOE_MIN = 1.5;            // ring floor / starting radius
+export const AOE_MAX = 5.0;            // ring cap
+export const AOE_GROWTH_PER_CHAR = 0.05; // ring grows this much per correct keystroke
+export const AOE_DECAY_PER_SEC = 0.6;  // ring shrinks this fast while idle
+export const AOE_DECAY_DELAY = 1.0;    // seconds of no typing before the shrink starts
+export const AOE_DROP_ON_MISS = 0.25;  // fraction of the ring lost on a typo
 export const PHYS_DAMAGE_SCALE = 0.25; // per-correct-char dmg = round(physicalDamage * this); warrior base 8 → 2/char
 export const WEAPON_ILVL_DMG = 0.5;    // equipped weapon adds itemLevel*this to physicalDamage (ilvl5 → +2.5)
 export const DEFENSE_K = 100;          // melee mitigation: dmg * K/(K+defense); base def 5 → ~4.8% off
@@ -23,19 +29,14 @@ export const BOSS_ENRAGE_TYPO_MULT = 1.5;
 export const BOSS_SHIELD_AT = [0.66, 0.33]; // HP fractions triggering shield phases
 export const PROMPT_MP_REWARD = 5;    // mana per completed prompt
 // HP regenerated per completed prompt, scaled by the prompt's tier (tier * this):
-// tier1 → 2 HP … tier4 → 8 HP. Applies in practice AND real combat (tougher prompt
-// heals more). NOTE: unconditional single-player heal today — a future PvP mode must
-// NOT heal the attacker off an opponent's prompt; gate this when PvP lands.
+// tier1 → 2 HP … tier4 → 8 HP. Tougher prompt heals more. NOTE: unconditional
+// single-player heal today — a future PvP mode must NOT heal the attacker off an
+// opponent's prompt; gate this when PvP lands.
 export const PROMPT_HP_REWARD_PER_TIER = 2;
 export const PROMPT_TARGET_LEN: Record<number, number> = { 1: 5, 2: 10, 3: 18, 4: 28 };
 
-// practice mode (fight with no aggroed target)
-export const PRACTICE_FALLBACK_TIER: Tier = 1; // practice word tier when no mob is in pull range
-// What happens when the last aggroed mob dies/leashes while in fight:
-//   false (default) → stay in fight, drop into practice mode (no-target prompt)
-//   true            → auto-exit to travel (the old pre-practice behavior)
-// The manual Esc-hold exit is unaffected either way.
-export const FIGHT_AUTOEXIT_TO_TRAVEL = false;
+// Prompt word tier when no mob is aggroed (the "Chill", no-target state).
+export const CHILL_FALLBACK_TIER: Tier = 1;
 
 // controls / input
 // NOTE: milliseconds — unlike the second-based timers elsewhere here; dt is converted where it's ticked.

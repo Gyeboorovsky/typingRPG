@@ -34,9 +34,11 @@
   --acc-b: #2a9e6a;   /* gradient bottom */
   --acc-under: #1d7a4f; /* button bevel underside */
 
-  /* practice-fight marker — the frame color on the no-target practice prompt.
-     Config-style: change this one value to restyle the marker (not in Options UI). */
-  --practice-marker: #5fb0e0;
+  /* combat-frame markers — the prompt-box frame color per derived state.
+     Config-style: change these to restyle the frames (not in Options UI). */
+  --chill-marker: #5fb0e0;   /* no target */
+  --warning-marker: #e0b84a; /* mobs chasing, none in range yet */
+  --combat-marker: #e0554a;  /* a mob is in range (can be harmed) */
 
   /* vitals */
   --hp: #f07a7a;  --hp-b: #d84545;  --hp-under: #a12e2e;
@@ -200,15 +202,25 @@ body { font-family: var(--font); color: var(--text); font-weight: 700; }
   border-radius: var(--r-lg);
   box-shadow: var(--sh-float);
 }
-/* practice (no-target) fight: distinct frame + a small header tag */
-#prompt-box.practice {
-  border-color: var(--practice-marker);
-  box-shadow: 0 0 0 1px var(--practice-marker), 0 0 18px rgba(95, 176, 224, 0.35), var(--sh-float);
+/* derived combat state: a distinct frame + header tag per Chill / Warning / Combat */
+#prompt-box.chill {
+  border-color: var(--chill-marker);
+  box-shadow: 0 0 0 1px var(--chill-marker), 0 0 18px rgba(95, 176, 224, 0.35), var(--sh-float);
+}
+#prompt-box.warning {
+  border-color: var(--warning-marker);
+  box-shadow: 0 0 0 1px var(--warning-marker), 0 0 18px rgba(224, 184, 74, 0.35), var(--sh-float);
+}
+#prompt-box.combat {
+  border-color: var(--combat-marker);
+  box-shadow: 0 0 0 1px var(--combat-marker), 0 0 20px rgba(224, 85, 74, 0.4), var(--sh-float);
 }
 #prompt-tag {
   font-size: 12px; font-weight: 900; letter-spacing: 1.5px; text-transform: uppercase;
-  color: var(--practice-marker); margin-bottom: 8px;
+  margin-bottom: 8px; color: var(--chill-marker);
 }
+#prompt-box.warning #prompt-tag { color: var(--warning-marker); }
+#prompt-box.combat #prompt-tag { color: var(--combat-marker); }
 #prompt { font-family: var(--mono); font-size: clamp(18px, 3vw, 28px); font-weight: 700; letter-spacing: 1px; white-space: pre-wrap; }
 #p-done { color: var(--acc); text-shadow: 0 0 8px rgba(62, 201, 138, 0.4); }
 #p-cur { color: var(--gold); text-decoration: underline; text-underline-offset: 3px; }
