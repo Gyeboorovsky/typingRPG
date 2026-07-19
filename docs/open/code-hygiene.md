@@ -1,29 +1,11 @@
 # Code hygiene — dead code, duplicated tunables, small gaps
 
-**Status:** planning (one question — stale branches; the rest are specified fixes)
+**Status:** planning (specified fixes; no open questions)
 **Source:** Fable audit 2026-07-18, re-verified against the live code on 2026-07-19
 (HEAD `689ee28`); citations are current. Doc-drift findings from the audit were fixed
 by the 2026-07-19 docs restructure and are not repeated here.
 
 ---
-
-## Questions
-
-### 1. Stale local branches — which to delete?
-Current branches besides `main` (verified 2026-07-19):
-**Merged into main (safe to prune):** `feat/inventory-click-carry`,
-`feat/inventory-equipment-combat-rebuild`, `feature/character-system`,
-`feature/m1-map`, `fix/inventory-ux`, `refactor/perf-pass-pre-b1` (6).
-**NOT merged:** `km-h-recovery`, `km-h-recovery-phase4`, `overnight-stress-test` (3).
-Note: `overnight-stress-test` is checked out in an external worktree
-(`../typingRPG-overnight`).
-   a) Delete the 6 merged now; keep the 3 unmerged.
-   b) Delete the 6 merged + the 2 `km-h-recovery*` (old recovery snapshots); keep
-      `overnight-stress-test`.
-   c) Delete everything except `main` (incl. removing the external worktree).
-   **Recommendation: a** — merged branches carry zero information (commits live in
-   main's history); the unmerged three may still hold unique work and deserve a look
-   before deletion.
 
 ## Tasks — dead code & duplication
 
@@ -100,3 +82,7 @@ Note: `overnight-stress-test` is checked out in an external worktree
   (`src/game/combat.ts:51-55`, `:65` "never downgrade mid-prompt").
 - `.claude/worktrees/` gitignore safety net, stale `m1-map` worktree, empty `design/`
   dir, control-bar `aria-label`s — fixed in/around the 2026-07-19 restructure.
+- Stale branches (audit #43) — ALL local branches except `main` deleted 2026-07-19
+  (user decision: full prune), incl. the external `../typingRPG-overnight` worktree.
+  Remote `origin/feature/character-system` still exists — delete on the next push
+  the user requests (`git push origin --delete feature/character-system`).

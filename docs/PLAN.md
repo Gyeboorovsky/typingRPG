@@ -36,7 +36,7 @@ feature file: `[ ]` todo → `[I]` implemented → `[V]` user-verified.
    better-after: — (independent; all items need manual [V] checks)
 
 4. **Code hygiene** — `planning` — `docs/open/code-hygiene.md`.
-   requires: — (one open question: stale-branch pruning)
+   requires: —
    better-after: combat rework, for the dead-constants section only (LEECH_* may be
    revived there) — the rest can go any time.
 
