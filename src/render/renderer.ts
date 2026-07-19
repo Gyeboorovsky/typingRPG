@@ -9,11 +9,11 @@ import type { Fx, GameState, GroundDrop, Mob, PortalDef, Vec2 } from '../game/ty
 import { lerp, playerWorldPos } from '../game/types';
 import { PAL } from './palette';
 import {
-  drawBoar, drawBoss, drawCultist, drawDrop, drawDummy, drawPlayer, drawPortal, drawRock,
+  drawBoar, drawBoss, drawCultist, drawDrop, drawDummy, drawGolem, drawPlayer, drawPortal, drawRock,
   drawRootfather, drawShroom, drawSlime, drawSporeling, drawThornspitter, drawTreant, drawTree,
   drawWaterShimmer, drawWolf,
 } from './sprites';
-import { ChunkedTerrain } from './terrain';
+import { ChunkedTerrain, WorldIndex } from './terrain';
 
 const IX = TILE_W / 2, IY = TILE_H / 2; // 32, 16
 const SQ2 = Math.SQRT2;
@@ -38,6 +38,7 @@ export class Renderer {
   private particles: Particle[] = [];
   private bursts: Burst[] = [];
   private terrain: ChunkedTerrain | null = null; // chunked ground cache, built lazily
+  private world: WorldIndex | null = null;       // bucketed props/water for O(visible) iteration
   private terrainMapId = '';                     // rebuild trigger on map switch
   private ents: Ent[] = []; // reused across frames (cleared, not reallocated)
 
@@ -67,19 +68,23 @@ export class Renderer {
     ctx.clearRect(0, 0, viewW, viewH);
 
     // ground pass: blit the visible chunks of the per-map terrain cache, then the
-    // animated water shimmer on top. Rebuilt on map switch or devicePixelRatio
-    // change (browser zoom / monitor move).
+    // animated water shimmer on top (visible water buckets only). Rebuilt on map
+    // switch or devicePixelRatio change (browser zoom / monitor move).
     if (!this.terrain || this.terrainMapId !== state.mapId
         || this.terrain.builtForDpr !== (window.devicePixelRatio || 1)) {
       this.terrain = new ChunkedTerrain(map);
+      this.world = new WorldIndex(map);
       this.terrainMapId = state.mapId;
     }
     this.terrain.draw(ctx, cx, cy, viewW, viewH);
-    for (const wt of this.terrain.waterTiles) {
-      const sx = projX(wt.x, wt.y) - cx, sy = projY(wt.x, wt.y) - cy;
-      if (sx < -TILE_W || sx > viewW + TILE_W || sy < -TILE_H * 2 || sy > viewH + TILE_H * 2) continue;
-      drawWaterShimmer(ctx, sx, sy, wt.x, wt.y, t);
-    }
+    const world = this.world!;
+    world.visit(world.waterBuckets, cx, cy, viewW, viewH, (tiles) => {
+      for (const wt of tiles) {
+        const sx = projX(wt.x, wt.y) - cx, sy = projY(wt.x, wt.y) - cy;
+        if (sx < -TILE_W || sx > viewW + TILE_W || sy < -TILE_H * 2 || sy > viewH + TILE_H * 2) continue;
+        drawWaterShimmer(ctx, sx, sy, wt.x, wt.y, t);
+      }
+    });
 
     // AoE damage-ring, between ground and entities
     if (state.combat && !state.player.dead) {
@@ -117,11 +122,13 @@ export class Renderer {
     // order is identical to the old closure-based pass.
     const ents = this.ents;
     ents.length = 0;
-    for (const pr of map.props) {
-      const sx = projX(pr.x, pr.y) - cx, sy = projY(pr.x, pr.y) - cy;
-      if (sx < -80 || sx > viewW + 80 || sy < -100 || sy > viewH + 100) continue;
-      ents.push({ d: pr.x + pr.y, kind: pr.kind, sx, sy, ref: null });
-    }
+    world.visit(world.propBuckets, cx, cy, viewW, viewH, (props) => {
+      for (const pr of props) {
+        const sx = projX(pr.x, pr.y) - cx, sy = projY(pr.x, pr.y) - cy;
+        if (sx < -80 || sx > viewW + 80 || sy < -100 || sy > viewH + 100) continue;
+        ents.push({ d: pr.x + pr.y, kind: pr.kind, sx, sy, ref: null });
+      }
+    });
     for (const por of map.portals) {
       const sx = projX(por.pos.x, por.pos.y) - cx, sy = projY(por.pos.x, por.pos.y) - cy;
       if (sx < -80 || sx > viewW + 80 || sy < -100 || sy > viewH + 100) continue;
@@ -163,6 +170,7 @@ export class Renderer {
           else if (m.defId === 'sporeling') drawSporeling(ctx, e.sx, e.sy, t, m.id);
           else if (m.defId === 'thornspitter') drawThornspitter(ctx, e.sx, e.sy, t, m.id);
           else if (m.defId === 'treant') drawTreant(ctx, e.sx, e.sy, t, m.id);
+          else if (m.defId === 'stone_golem') drawGolem(ctx, e.sx, e.sy, t, m.id);
           else drawCultist(ctx, e.sx, e.sy, t, m.id);
           if (m.hp < def.hp) this.mobBar(e.sx, e.sy - (def.boss ? 80 : 40), m.hp / def.hp);
           break;

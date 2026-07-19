@@ -13,11 +13,14 @@ feature file: `[ ]` todo → `[I]` implemented → `[V]` user-verified.
 
 ## Active
 
-0. **Second map + portals (experiment)** — `[I]` implemented 2026-07-19, awaiting the
-   user's live review/`[V]` (or a revert — built as one commit on purpose). The
-   Elderwood (152×152, 5 new mobs, Rootfather boss), walk-up portals with a 3 s
-   channel, chunked terrain rendering. Decisions (all delegated) recorded in
-   `docs/decisions.md` → "Second map & portals".
+0. **World expansion (experiment)** — `[I]` implemented 2026-07-19, awaiting the
+   user's live review/`[V]`. Round 1: the Elderwood (152×152, 5 new mobs, Rootfather)
+   + walk-up portals + chunked terrain. Round 2 (user feedback): open-world generator
+   with reusable structures + three Metin2-style maps (Sunfall Steppes 760²,
+   Ashen Highlands 1520², Frostreach Frontier 3040² with BOTH bosses), Stone Golem,
+   portal chain, lazy map builds, renderer scaling (prefetch + bucketing — the
+   stutter fix). Decisions in `docs/decisions.md` → "Second map & portals" and
+   "World expansion".
 
 1. **Combat rework** — `in-progress` — `docs/open/combat-rework-scope.md`.
    ALL questions answered 2026-07-19; decisions locked in `docs/decisions.md`.

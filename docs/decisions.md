@@ -328,6 +328,35 @@ decisions taken (revertible as one commit):
   map). Portal swirl + teal channel arc around the player; camera snaps on map
   switch.
 
+## World expansion — three open-world maps (experiment round 2, 2026-07-19)
+
+User feedback on the Elderwood: too dense — Metin2 philosophy wanted (MOST of the map
+is open hunting ground with many BIG spots; forests/ridges are only boundaries you
+route around) + scroll stutter. Delegated decisions:
+
+- **One parametric generator** (`buildOpenWorld(cfg)`) + a reusable structure library
+  (border, ridge chains with passes, forest patches, oval lakes, sinus rivers with
+  bridges, boss arenas, cleared roads, scatter) — mobs and structures are fully
+  map-independent. A unit test asserts every open world is **>80% walkable**.
+- **Three new maps**, edge 5×/10×/20× the Elderwood's 152 (user's spec):
+  `Sunfall Steppes` 760² (grass/sand, entry tier), `Ashen Highlands` 1520² (ash/moss,
+  golems + cultists), `Frostreach Frontier` 3040² (snow, wolf packs, both bosses —
+  Typhon AND the Rootfather in far-north arenas). New reusable mob: **Stone Golem**
+  (def 30 tank). New terrains: ash + snow.
+- **Portal chain**: meadow → elderwood → steppes → highlands → frontier, every onward
+  portal boss-guarded or far-field; return portals by each arrival. The Elderwood
+  gained an onward portal behind the Rootfather. (The Elderwood itself otherwise
+  untouched, per the user.)
+- **Maps build LAZILY on first access** (~50 ms even for the 3040² map) — boot cost
+  unchanged. Generator computes a reachability flood and places spots ONLY on tiles
+  reachable from spawn; roads guarantee spawn→portal/arena corridors structurally.
+- **Renderer scaling** (the stutter fix): chunk builds prefetch one ring beyond the
+  view at 1 background build/frame (visible builds immediate); chunk lookup is
+  O(visible) via inverse projection; props/water are bucketed (`WorldIndex`, 32-tile
+  buckets) so per-frame iteration is O(visible), not O(map); water tiles precomputed
+  at map build. Measured on the 3040² map: median 0.1 ms, p95 0.5 ms, zero >16 ms
+  frames at 3× sprint speed; ~300 mobs sim tick 0.25 ms.
+
 ## Still open / deferred (everything else combat-related is decided above)
 
 - Sword mode-set design (4 slots, one behavior today), wand & grimoire specifics,

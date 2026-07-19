@@ -314,20 +314,20 @@ describe('movement and map', () => {
 describe('maps & portals (multi-map)', () => {
   const flood = (m: typeof MAPS.meadow): Uint8Array => {
     // BFS over unblocked tiles from the map's spawn — the reachability oracle.
+    // Typed-array queue: this also runs on the 3040x3040 frontier (9.2M tiles).
     const seen = new Uint8Array(m.w * m.h);
-    const q: number[] = [Math.round(m.spawn.y) * m.w + Math.round(m.spawn.x)];
-    seen[q[0]] = 1;
-    while (q.length) {
-      const i = q.pop()!;
+    const queue = new Int32Array(m.w * m.h);
+    let head = 0, tail = 0;
+    const start = Math.round(m.spawn.y) * m.w + Math.round(m.spawn.x);
+    seen[start] = 1;
+    queue[tail++] = start;
+    while (head < tail) {
+      const i = queue[head++];
       const x = i % m.w, y = (i / m.w) | 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
-        const nx = x + dx, ny = y + dy;
-        if (nx < 0 || ny < 0 || nx >= m.w || ny >= m.h) continue;
-        const ni = ny * m.w + nx;
-        if (seen[ni] || m.blocked[ni]) continue;
-        seen[ni] = 1;
-        q.push(ni);
-      }
+      if (x > 0 && !seen[i - 1] && !m.blocked[i - 1]) { seen[i - 1] = 1; queue[tail++] = i - 1; }
+      if (x < m.w - 1 && !seen[i + 1] && !m.blocked[i + 1]) { seen[i + 1] = 1; queue[tail++] = i + 1; }
+      if (y > 0 && !seen[i - m.w] && !m.blocked[i - m.w]) { seen[i - m.w] = 1; queue[tail++] = i - m.w; }
+      if (y < m.h - 1 && !seen[i + m.w] && !m.blocked[i + m.w]) { seen[i + m.w] = 1; queue[tail++] = i + m.w; }
     }
     return seen;
   };
@@ -347,10 +347,45 @@ describe('maps & portals (multi-map)', () => {
     }
   });
 
-  it('the elderwood is ~10x the meadow and its spot mobs exist', () => {
+  it('every spot on every map references a registered mob (mobs are map-independent)', () => {
+    for (const m of Object.values(MAPS))
+      for (const s of m.spots) expect(MOBS[s.defId], `${m.id}: ${s.defId}`).toBeDefined();
+  });
+
+  it('the elderwood is ~10x the meadow; the open worlds are 5x/10x/20x the elderwood EDGE', () => {
     const area = (m: typeof MAPS.meadow): number => m.w * m.h;
     expect(area(MAPS.elderwood) / area(MAPS.meadow)).toBeGreaterThanOrEqual(10);
-    for (const s of MAPS.elderwood.spots) expect(MOBS[s.defId], s.defId).toBeDefined();
+    expect(MAPS.steppes.w).toBe(MAPS.elderwood.w * 5);
+    expect(MAPS.highlands.w).toBe(MAPS.elderwood.w * 10);
+    expect(MAPS.frontier.w).toBe(MAPS.elderwood.w * 20);
+  });
+
+  it('the open worlds are MOSTLY walkable (Metin2 openness, not a maze)', () => {
+    for (const id of ['steppes', 'highlands', 'frontier'] as const) {
+      const m = MAPS[id];
+      let free = 0;
+      for (let i = 0; i < m.blocked.length; i++) if (!m.blocked[i]) free++;
+      expect(free / m.blocked.length, `${id} open fraction`).toBeGreaterThan(0.8);
+    }
+  });
+
+  it('the portal chain walks end to end: meadow → elderwood → steppes → highlands → frontier', () => {
+    const s = newGame(9);
+    s.player.godmode = true; // boss-guarded portals — the probe shouldn't die
+    const hops: [string, { x: number; y: number }][] = [
+      ['elderwood', MAPS.meadow.portals[0].pos],
+      ['steppes', MAPS.elderwood.portals[1].pos],   // the onward portal behind the Rootfather
+      ['highlands', MAPS.steppes.portals[1].pos],   // portals[0] is the way back
+      ['frontier', MAPS.highlands.portals[1].pos],
+    ];
+    for (const [expectMap, portalPos] of hops) {
+      s.player.pos = { ...portalPos };
+      for (let i = 0; i < Math.ceil(PORTAL_CHANNEL_SECONDS / SIM_DT) + 5; i++) update(s, [], SIM_DT);
+      expect(s.mapId).toBe(expectMap);
+    }
+    expect(s.mobs.some((m) => m.defId === 'typhon'), 'typhon roams the frontier').toBe(true);
+    expect(s.mobs.some((m) => m.defId === 'rootfather'), 'rootfather too').toBe(true);
+    expect(s.mobs.some((m) => m.defId === 'stone_golem'), 'golems live there').toBe(true);
   });
 
   it('standing on a portal channels for PORTAL_CHANNEL_SECONDS, then teleports and repopulates', () => {

@@ -174,6 +174,21 @@ export const MOBS: Record<string, MobDef> = {
       { itemId: 'oak_staff', chance: 0.03, min: 1, max: 1 },
     ],
   },
+  // Animated boulder — the heaviest armor in the game; chip it down patiently.
+  stone_golem: {
+    id: 'stone_golem', name: 'Stone Golem', tier: 3, hp: 160, xp: 130,
+    speed: 0.9, aggroRadius: 3.5,
+    attackRange: 1.5,
+    attacks: { physical: { damage: 10, period: 3.2 } },
+    onMiss: { damage: 12, kind: 'physical', cooldown: 1.6 },
+    defense: 30,
+    drops: [
+      { itemId: 'dark_shard', chance: 0.3, min: 1, max: 1 },
+      { itemId: 'copper_coin', chance: 0.5, min: 2, max: 4 },
+      { itemId: 'iron_helm', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'iron_mail', chance: 0.03, min: 1, max: 1 },
+    ],
+  },
   // The Elderwood's boss: shield phases like Typhon, hits in two elements.
   rootfather: {
     id: 'rootfather', name: 'The Rootfather', tier: 4, hp: 550, xp: 800,

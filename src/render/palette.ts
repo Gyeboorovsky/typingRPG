@@ -5,6 +5,8 @@ export const PAL = {
   waterA: '#3b7dd8', waterB: '#4f8fe4',
   forestA: '#3c7a44', forestB: '#367040', // Elderwood floor (darker, cooler green)
   mossA: '#4f9455', mossB: '#488b4e',     // clearing floors — a touch lighter than forest
+  ashA: '#6e6a63', ashB: '#66625b',       // Ashen Highlands ground
+  snowA: '#d8e2ea', snowB: '#cfdae4',     // Frostreach Frontier ground
   tileEdge: 'rgba(0,0,0,0.08)',
   treeTrunk: '#7a5230', treeLeafA: '#2e7d4f', treeLeafB: '#266b43',
   rockA: '#8d8d99', rockB: '#72727e',
@@ -34,6 +36,7 @@ export const PAL = {
   sporeCap: '#b85c8a', sporeCapDot: '#f0e0ea', sporeBody: '#d8c9a8',
   thorn: '#4e7a35', thornDark: '#3b5e28', thornEye: '#d8e84a',
   treant: '#6b4a2e', treantDark: '#523822', treantLeaf: '#2e6b3f', treantEye: '#7de08a',
+  golem: '#9a948c', golemDark: '#7b756d', golemEye: '#e8a13c', golemMoss: '#5c8a55',
   root: '#4a3b28', rootDark: '#382c1e', rootLeaf: '#3f8a4f', rootEye: '#8af09a',
   // Portals
   portal: '#5fd8c9', portalCore: '#bafff4',

@@ -28,6 +28,8 @@ export function drawTileBase(
   else if (terrain === 2) fill = PAL.waterA;
   else if (terrain === 3) fill = alt ? PAL.forestA : PAL.forestB; // Elderwood floor
   else if (terrain === 4) fill = alt ? PAL.mossA : PAL.mossB;     // clearing moss
+  else if (terrain === 5) fill = alt ? PAL.ashA : PAL.ashB;       // highland ash
+  else if (terrain === 6) fill = alt ? PAL.snowA : PAL.snowB;     // frontier snow
   diamond(ctx, sx, sy);
   ctx.fillStyle = fill;
   ctx.fill();
@@ -507,6 +509,53 @@ export function drawTreant(ctx: CanvasRenderingContext2D, sx: number, sy: number
   ctx.arc(sx - 3 + sway * 0.4, sy - 27, 1.6, 0, Math.PI * 2);
   ctx.arc(sx + 3 + sway * 0.4, sy - 27, 1.6, 0, Math.PI * 2);
   ctx.fill();
+}
+
+/** Stone Golem: a stacked-boulder biped with moss on the shoulder and ember eyes. */
+export function drawGolem(ctx: CanvasRenderingContext2D, sx: number, sy: number, t: number, id: number): void {
+  const heave = Math.sin(t * 1.1 + id) * 1;
+  const y = sy + heave * 0.4;
+  drawShadow(ctx, sx, sy + 2, 14);
+  ctx.fillStyle = PAL.golemDark; // legs — two squat blocks
+  ctx.fillRect(sx - 9, y - 7, 7, 7);
+  ctx.fillRect(sx + 2, y - 7, 7, 7);
+  ctx.fillStyle = PAL.golem; // torso boulder
+  ctx.beginPath();
+  ctx.moveTo(sx - 12, y - 8);
+  ctx.lineTo(sx - 10, y - 26);
+  ctx.lineTo(sx + 2, y - 30);
+  ctx.lineTo(sx + 12, y - 22);
+  ctx.lineTo(sx + 11, y - 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = PAL.golemDark; // shaded facet
+  ctx.beginPath();
+  ctx.moveTo(sx + 2, y - 30);
+  ctx.lineTo(sx + 12, y - 22);
+  ctx.lineTo(sx + 11, y - 8);
+  ctx.lineTo(sx + 2, y - 9);
+  ctx.closePath();
+  ctx.fill();
+  ctx.fillStyle = PAL.golemMoss; // mossy shoulder cap
+  ctx.beginPath();
+  ctx.ellipse(sx - 5, y - 26, 6, 3, -0.3, Math.PI, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = PAL.golem; // head stone
+  ctx.beginPath();
+  ctx.moveTo(sx - 4, y - 30);
+  ctx.lineTo(sx - 2, y - 38);
+  ctx.lineTo(sx + 5, y - 36);
+  ctx.lineTo(sx + 6, y - 29);
+  ctx.closePath();
+  ctx.fill();
+  const glow = 0.6 + 0.4 * Math.sin(t * 4 + id);
+  ctx.fillStyle = PAL.golemEye; // ember eyes
+  ctx.globalAlpha = glow;
+  ctx.beginPath();
+  ctx.arc(sx - 0.5, y - 33.5, 1.3, 0, Math.PI * 2);
+  ctx.arc(sx + 3.5, y - 33, 1.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.globalAlpha = 1;
 }
 
 /** The Rootfather: Typhon-scale silhouette in bark, antler branches for horns,
