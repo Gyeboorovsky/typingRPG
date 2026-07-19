@@ -77,7 +77,9 @@ export const DEFAULT_KEYMAP: Keymap = {
     toggleInventory: combo('KeyI'), toggleCharacter: combo('KeyC'),
     enterFight1: combo('Space'), enterFight2: combo('Digit2'),
     enterFight3: combo('Digit3'), enterFight4: combo('Digit4'),
-    exitFight: combo('KeyQ', true), // Alt+Q
+    // Alt+X. (Alt+Q moved to target-switching in the combat rework — settings.ts
+    // migrates a stored old-default Alt+Q bind to Alt+X on load.)
+    exitFight: combo('KeyX', true),
     fireMode1: combo('Digit1', true), fireMode2: combo('Digit2', true),
     fireMode3: combo('Digit3', true), fireMode4: combo('Digit4', true),
   },

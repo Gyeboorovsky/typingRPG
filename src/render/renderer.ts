@@ -1,5 +1,6 @@
 // Isometric world renderer: projection, culling, depth sort, camera,
 // the streak radius ring, and floating damage numbers / bursts.
+import { currentRing } from '../game/combat';
 import { BOSS_ENRAGE_HP, CAMERA_LERP, TILE_H, TILE_W } from '../game/constants';
 import { ITEMS } from '../game/items';
 import { PROPS } from '../game/map';
@@ -76,7 +77,7 @@ export class Renderer {
 
     // AoE damage-ring, between ground and entities
     if (state.combat && !state.player.dead) {
-      const r = state.combat.aoe;
+      const r = currentRing(state.player);
       const sx = projX(pp.x, pp.y) - cx, sy = projY(pp.x, pp.y) - cy;
       ctx.strokeStyle = PAL.ring;
       ctx.globalAlpha = 0.5 + 0.3 * Math.sin(t * 5);

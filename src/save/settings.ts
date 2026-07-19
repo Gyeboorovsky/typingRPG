@@ -8,7 +8,7 @@ import type { Combo, Keymap, ModifierKey } from '../keybinds';
 const SETTINGS_KEY = 'typingRPG.settings';
 
 interface StoredSettings {
-  version: 1;
+  version: 1 | 2;
   combatModifier: ModifierKey;
   bindings: Partial<Record<string, Combo>>;
 }
@@ -38,6 +38,16 @@ export function loadSettings(): Keymap {
         if (isCombo(b)) keymap.bindings[id] = { code: b.code, alt: b.alt, ctrl: b.ctrl };
       }
     }
+    // v1 → v2: exitFight's factory default moved Alt+Q → Alt+X (Alt+Q now belongs to
+    // target-switching). A stored Alt+Q bind is indistinguishable from the old
+    // default, so migrate it — unless the user put something else on Alt+X.
+    if ((data.version ?? 1) < 2) {
+      const ef = keymap.bindings.exitFight;
+      const altXTaken = ACTION_ORDER.some((id) =>
+        id !== 'exitFight' && keymap.bindings[id].code === 'KeyX' && keymap.bindings[id].alt);
+      if (ef.code === 'KeyQ' && ef.alt && !ef.ctrl && !altXTaken)
+        keymap.bindings.exitFight = { code: 'KeyX', alt: true, ctrl: false };
+    }
   } catch { /* corrupt storage → defaults */ }
   return keymap;
 }
@@ -46,7 +56,7 @@ export function loadSettings(): Keymap {
 export function saveSettings(keymap: Keymap): void {
   try {
     const data: StoredSettings = {
-      version: 1,
+      version: 2,
       combatModifier: keymap.combatModifier,
       bindings: keymap.bindings,
     };

@@ -6,7 +6,7 @@ import { classOf } from './classes';
 import {
   DROP_DESPAWN_SECONDS, DROP_REARM_MARGIN, GOLD_PER_COIN, MAX_LEVEL, PICKUP_RADIUS, PLAYER_RADIUS, XP_CURVE,
 } from './constants';
-import { exitFight, mobAttackStep, resolveKeystroke, stepCombatRing, syncCombat, tryUltimate } from './combat';
+import { exitFight, mobAttackStep, resolveKeystroke, stepCombatMeters, syncCombat, tryUltimate } from './combat';
 import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize, rectFree } from './items';
 import { circleBlocked, isBlocked, SPAWN } from './map';
 import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
@@ -22,6 +22,7 @@ export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior
       equipment: emptyEquipment(), gold: 0, leech: 1,
       inventory: [], overflow: [], invRev: 0,
       dead: false, godmode: false, ultCooldown: 0, animT: 0,
+      streak: 0, typingIdle: 0, attackRanges: {},
     },
     mobs: [], drops: [], spots: SPOTS.map(() => ({ pending: [] })),
     combat: null, mode: 'travel', fireMode: 1, travelUnlocked: false, held: [], fx: [], bossKilled: false, dirty: false, nextId: 1,
@@ -60,7 +61,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
   respawnStep(state, dt);
   stepDrops(state, dt);
   syncCombat(state);
-  stepCombatRing(state, dt); // ring idle-decay, after syncCombat has ensured combat exists
+  stepCombatMeters(state, dt); // ring + streak dynamics, after syncCombat has ensured combat exists
   regen(state, dt);
 }
 
@@ -310,6 +311,7 @@ export function applySave(state: GameState, save: SaveData): void {
   p.statPoints = save.player.statPoints ?? 0;
   p.leech = 1; // transient — always re-init full on load (never persisted)
   p.godmode = false; // transient — a loaded character never starts invincible
+  p.streak = 0; p.typingIdle = 0; p.attackRanges = {}; // in-combat meters never persist
 
   if (save.v === 2) {
     p.inventory = save.player.inventory.map((s) => ({ ...s, x: s.x ?? 0, y: s.y ?? 0 }));

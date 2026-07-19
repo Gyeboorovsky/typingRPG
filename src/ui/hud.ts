@@ -4,6 +4,7 @@
 import { maxHp, maxMp, playerAttributes, STAT_IDS } from '../game/attributes';
 import type { AttributeId, StatId } from '../game/attributes';
 import { classOf } from '../game/classes';
+import { currentRing } from '../game/combat';
 import { INV_PAGE_H, INV_W, XP_CURVE } from '../game/constants';
 import { firstFreeCell, ITEMS, itemSize, rectFree } from '../game/items';
 import { MOBS } from '../game/mobs';
@@ -219,7 +220,8 @@ export class Hud {
       //   warning = mobs aggroed/chasing but none in the ring yet (yellow)
       //   chill   = nothing engaged (blue)
       const pp = p.pos;
-      const inRange = state.mobs.some((m) => dist(m.pos, pp) <= c.aoe);
+      const ring = currentRing(p);
+      const inRange = state.mobs.some((m) => dist(m.pos, pp) <= ring);
       const anyAggro = state.mobs.some((m) => m.state === 'aggro');
       const fs = inRange ? 'combat' : anyAggro ? 'warning' : 'chill';
       this.set('fightstate', fs, () => {
@@ -236,11 +238,12 @@ export class Hud {
         e.pCur.textContent = cur === ' ' ? ' ' : cur;
         e.pRest.textContent = c.prompt.slice(c.typed + 1);
       });
-      this.set('streak', c.streak, () => {
-        e.streak.innerHTML = `Streak <b>${c.streak}</b>`;
+      const streak = Math.floor(p.streak); // float internally (idle decay); display floors
+      this.set('streak', streak, () => {
+        e.streak.innerHTML = `Streak <b>${streak}</b>`;
       });
-      this.set('radius', c.aoe.toFixed(2), () => {
-        e.radius.textContent = `AoE ${c.aoe.toFixed(1)} tiles`;
+      this.set('radius', ring.toFixed(2), () => {
+        e.radius.textContent = `AoE ${ring.toFixed(1)} tiles`;
       });
       if (c.errorFlash > this.lastFlash) { // fresh typo → retrigger shake
         e.prompt.classList.remove('shake');
@@ -252,7 +255,7 @@ export class Hud {
       this.lastFlash = c.errorFlash;
 
       const ult = classOf(p).ult;
-      const ready = c.streak >= ult.streakThreshold && (inRange || anyAggro); // needs a real target
+      const ready = p.streak >= ult.streakThreshold && (inRange || anyAggro); // needs a real target
       let hint = '';
       if (ready) {
         if (p.ultCooldown > 0) hint = `${ult.name} — cooling ${p.ultCooldown.toFixed(1)}s`;

@@ -5,11 +5,13 @@ import {
 } from './attributes';
 import { classOf } from './classes';
 import {
-  AOE_DECAY_DELAY, AOE_DECAY_PER_SEC, AOE_DROP_ON_MISS, AOE_GROWTH_PER_CHAR, AOE_MAX, AOE_MIN,
   BOSS_ENRAGE_HP, BOSS_ENRAGE_TYPO_MULT, BOSS_SHIELD_AT, CHILL_FALLBACK_TIER, DEFENSE_K,
-  MOB_ONMISS_JITTER_MAX, MOB_ONMISS_JITTER_MIN,
+  MOB_ONMISS_JITTER_MAX, MOB_ONMISS_JITTER_MIN, RING_BY_WEAPON, RING_DEFAULT,
+  STREAK_GROWTH, STREAK_IDLE_DECAY_DELAY, STREAK_IDLE_DECAY_PER_SEC,
   PROMPT_HP_REWARD_PER_TIER, PROMPT_MP_REWARD, ULT_DAMAGE, ULT_RADIUS_MULT, XP_CURVE,
 } from './constants';
+import type { RingConfig } from './constants';
+import { ITEMS } from './items';
 import { rollDrops } from './loot';
 import { aggroMob, MOBS, mobPhase, respawnDelayFor } from './mobs';
 import { rand } from './rng';
@@ -36,13 +38,50 @@ export function mitigatePlayerDamage(
 
 const aggroed = (state: GameState): Mob[] => state.mobs.filter((m) => m.state === 'aggro');
 
+// --- the attack-range ring: per-weapon live state on the Player ------------------
+
+/** Config key for the equipped weapon's ring: its weaponType, or 'unarmed'. */
+export function weaponRingKey(p: Player): string {
+  const w = p.equipment.weapon;
+  return (w && ITEMS[w.defId]?.weaponType) || 'unarmed';
+}
+
+/** Ring config for a weapon key: RING_BY_WEAPON override merged over RING_DEFAULT. */
+export function ringConfigFor(key: string): RingConfig {
+  const o = RING_BY_WEAPON[key as keyof typeof RING_BY_WEAPON];
+  if (!o) return RING_DEFAULT;
+  return { ...RING_DEFAULT, ...o, growth: { ...RING_DEFAULT.growth, ...o.growth } };
+}
+
+/** The live ring radius for the currently equipped weapon (its floor when untouched). */
+export function currentRing(p: Player): number {
+  const key = weaponRingKey(p);
+  return p.attackRanges[key] ?? ringConfigFor(key).min;
+}
+
+function setRing(p: Player, v: number): void {
+  const key = weaponRingKey(p);
+  const cfg = ringConfigFor(key);
+  p.attackRanges[key] = Math.min(Math.max(v, cfg.min), cfg.max);
+}
+
+/** Zero every in-combat meter. Fires ONLY on the explicit ways out of a fight —
+ *  exitFight (Alt+X / Esc-hold) and death. While the player STAYS in fight mode,
+ *  streak and per-weapon rings persist across pack clears and weapon switches
+ *  (decision 2026-07-19). */
+function resetCombatMeters(p: Player): void {
+  p.streak = 0;
+  p.typingIdle = 0;
+  p.attackRanges = {};
+}
+
 /** True while at least one mob sits inside the current damage ring (the "Combat"
  *  state — your next keystroke can harm it). */
 export const targetInRange = (state: GameState): boolean => {
-  const c = state.combat;
-  if (!c) return false;
+  if (!state.combat) return false;
   const pp = playerWorldPos(state.player);
-  return state.mobs.some((m) => dist(m.pos, pp) <= c.aoe);
+  const r = currentRing(state.player);
+  return state.mobs.some((m) => dist(m.pos, pp) <= r);
 };
 
 /** Leave combat entirely — the single "end the fight" entry point any module can
@@ -50,6 +89,7 @@ export const targetInRange = (state: GameState): boolean => {
 export function exitFight(state: GameState): void {
   state.mode = 'travel';
   state.combat = null;
+  resetCombatMeters(state.player);
 }
 
 /** Per-tick combat lifecycle. Combat is ONE state: it exists whenever the player is
@@ -65,22 +105,37 @@ export function syncCombat(state: GameState): void {
   const t = (tier || CHILL_FALLBACK_TIER) as Tier;
 
   if (!state.combat) {
-    state.combat = { prompt: promptFor(state, t), typed: 0, streak: 0, tier: t, errorFlash: 0, aoe: AOE_MIN, idleTime: 0 };
+    state.combat = { prompt: promptFor(state, t), typed: 0, tier: t, errorFlash: 0 };
   } else if (t > state.combat.tier) { // a tougher mob engaged — harder words (never downgrade mid-prompt)
     state.combat.tier = t;
     newPrompt(state);
   }
 }
 
-/** Advance the ring's idle decay one tick. The ring shrinks toward AOE_MIN once the
- *  player has stopped typing for AOE_DECAY_DELAY; typing (resolveKeystroke) resets the
- *  idle timer and grows/drops the ring. */
-export function stepCombatRing(state: GameState, dt: number): void {
-  const c = state.combat;
-  if (!c) return;
-  c.idleTime += dt;
-  if (c.idleTime >= AOE_DECAY_DELAY)
-    c.aoe = Math.max(c.aoe - AOE_DECAY_PER_SEC * dt, AOE_MIN);
+/** Advance the in-combat meters one tick: ring idle-decay (equipped weapon after its
+ *  decayDelay; unequipped weapons decay unconditionally in the background), the
+ *  movement-driven growth sources, and the streak's idle decay. Typing
+ *  (resolveKeystroke) resets typingIdle. */
+export function stepCombatMeters(state: GameState, dt: number): void {
+  const p = state.player;
+  if (state.mode !== 'fight' || p.dead) return;
+  p.typingIdle += dt;
+  const key = weaponRingKey(p);
+  const cfg = ringConfigFor(key);
+  // growth sources tied to movement (rates default 0 — pure config seams).
+  // In fight, movement only happens while the combat-modifier is held.
+  const moving = state.held.length > 0 && state.travelUnlocked;
+  let r = p.attackRanges[key] ?? cfg.min;
+  r += (moving ? cfg.growth.whileMoving : cfg.growth.whileStationary) * dt;
+  if (p.typingIdle >= cfg.decayDelay) r -= cfg.decayPerSec * dt;
+  p.attackRanges[key] = Math.min(Math.max(r, cfg.min), cfg.max);
+  for (const k of Object.keys(p.attackRanges)) { // unequipped rings keep decaying
+    if (k === key) continue;
+    const c2 = ringConfigFor(k);
+    p.attackRanges[k] = Math.max((p.attackRanges[k] ?? c2.min) - c2.decayPerSec * dt, c2.min);
+  }
+  if (p.streak > 0 && p.typingIdle >= STREAK_IDLE_DECAY_DELAY)
+    p.streak = Math.max(0, p.streak - STREAK_IDLE_DECAY_PER_SEC * dt);
 }
 
 function newPrompt(state: GameState): void {
@@ -94,22 +149,27 @@ export function resolveKeystroke(state: GameState, ch: string): void {
   const c = state.combat;
   const p = state.player;
   if (!c || p.dead) return;
-  c.idleTime = 0; // any keystroke counts as activity → pauses the ring's idle decay
+  p.typingIdle = 0; // any keystroke counts as activity → pauses the idle decays
+  const cfg = ringConfigFor(weaponRingKey(p));
   if (ch === c.prompt[c.typed]) {
     c.typed++;
-    c.aoe = Math.min(c.aoe + AOE_GROWTH_PER_CHAR, AOE_MAX); // correct char grows the ring
+    if (cfg.growth.onCorrectType) setRing(p, currentRing(p) + cfg.growth.onCorrectType);
     const dmg = typingDamage(p);
     const pp = playerWorldPos(p);
     // Attack EVERY mob inside the ring (not just aggroed ones). damageMob itself
     // aggro-pulls the victim + pack (aggro ← damage attempt, the single rule).
     // Snapshot first so killMob's splice is safe.
-    const targets = state.mobs.filter((m) => dist(m.pos, pp) <= c.aoe);
-    for (const m of targets) damageMob(state, m, dmg);
-    // Streak (ult charge) builds only while a target is in range; empty range resets it.
-    c.streak = targets.length > 0 ? c.streak + 1 : 0;
+    const r = currentRing(p);
+    const targets = state.mobs.filter((m) => dist(m.pos, pp) <= r);
+    let anyHit = false;
+    for (const m of targets) if (damageMob(state, m, dmg)) anyHit = true;
+    if (anyHit && cfg.growth.onHit) setRing(p, currentRing(p) + cfg.growth.onHit);
+    // Streak: grows per STREAK_GROWTH config (attempt vs landed hit); with nothing
+    // there to attack it FREEZES — only a typo zeroes it (decision 2026-07-19).
+    if (STREAK_GROWTH === 'onAttempt' ? targets.length > 0 : anyHit) p.streak += 1;
     if (state.combat && c.typed >= c.prompt.length) completePrompt(state, aggroed(state));
   } else {
-    c.aoe = Math.max(c.aoe * (1 - AOE_DROP_ON_MISS), AOE_MIN); // a miss shrinks the ring
+    setRing(p, currentRing(p) * (1 - cfg.dropOnMiss)); // a miss shrinks the ring
     typo(state);
   }
 }
@@ -139,7 +199,7 @@ function completePrompt(state: GameState, ag: Mob[]): void {
  *  and starts its per-mob cooldown, which is what absorbs typo spam (decision 2026-07-19). */
 function typo(state: GameState): void {
   const c = state.combat!;
-  c.streak = 0;
+  state.player.streak = 0; // the ONE thing that zeroes the streak instantly
   c.errorFlash = 0.3;
   const pp = playerWorldPos(state.player);
   let shieldedBoss = false;
@@ -204,12 +264,14 @@ export function mobAttackStep(state: GameState, dt: number): void {
   }
 }
 
-export function damageMob(state: GameState, m: Mob, dmg: number): void {
+/** Returns true when hp damage actually landed (false on shield-block / dodge) —
+ *  the 'onHit' streak/ring growth sources key off this. */
+export function damageMob(state: GameState, m: Mob, dmg: number): boolean {
   // aggro ← damage ATTEMPT: the mob (and its pack) turns on you even when the hit
   // is then shield-blocked or dodged. The only other aggro source is the proximity
   // check in mobStep (aggressive mobs). Decision 2026-07-19.
   if (m.state !== 'aggro') aggroMob(state, m);
-  if (m.shield) return;
+  if (m.shield) return false;
   const def = MOBS[m.defId];
   // Mob-side mitigation of the player's hit: dodge% shows a floating "block" and
   // deals nothing; percentage defense softens what lands (same K-formula as the
@@ -217,12 +279,12 @@ export function damageMob(state: GameState, m: Mob, dmg: number): void {
   // zero-dodge fights keep the pre-rework RNG stream.
   if (def.dodge && rand(state) * 100 < def.dodge) {
     state.fx.push({ kind: 'block', pos: { ...m.pos } });
-    return;
+    return false;
   }
   if (def.defense) dmg = Math.max(1, Math.round(dmg * DEFENSE_K / (DEFENSE_K + def.defense)));
   m.hp -= dmg;
   state.fx.push({ kind: 'dmg', pos: { ...m.pos }, value: dmg });
-  if (m.hp <= 0) { killMob(state, m); return; }
+  if (m.hp <= 0) { killMob(state, m); return true; }
   if (def.boss && !m.shield) {
     const at = BOSS_SHIELD_AT[m.shieldsUsed];
     if (at !== undefined && m.hp / def.hp <= at) {
@@ -231,6 +293,7 @@ export function damageMob(state: GameState, m: Mob, dmg: number): void {
       newPrompt(state); // fresh phrase for the flawless phase
     }
   }
+  return true;
 }
 
 function killMob(state: GameState, m: Mob): void {
@@ -278,6 +341,7 @@ export function hurtPlayer(state: GameState, dmg: number): void {
       m.target = null;
       m.pendingOnMiss = null; // death cancels scheduled attacks — no post-respawn volleys
     }
+    resetCombatMeters(p); // death is an exit — all in-combat meters reset
     state.fx.push({ kind: 'death' });
   }
 }
@@ -290,11 +354,11 @@ export function tryUltimate(state: GameState): void {
   // ult would whiff and waste mana (streak can linger at threshold after a clear).
   if (!targetInRange(state) && !state.mobs.some((m) => m.state === 'aggro')) return;
   const ult = classOf(p).ult;
-  if (c.streak < ult.streakThreshold || p.mp < ult.manaCost) return;
+  if (p.streak < ult.streakThreshold || p.mp < ult.manaCost) return;
   p.mp -= ult.manaCost;
   p.ultCooldown = ult.cooldown;
   const pp = playerWorldPos(p);
-  const r = c.aoe * ULT_RADIUS_MULT;
+  const r = currentRing(p) * ULT_RADIUS_MULT;
   // Every ult id currently resolves to the Whirlwind effect; per-class
   // effects switch on classOf(p).ult.id here when the other classes land.
   const targets = state.mobs.filter((m) => dist(m.pos, pp) <= r);

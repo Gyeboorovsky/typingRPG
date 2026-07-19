@@ -36,19 +36,25 @@ and shoots; faint orange rings around aggroed mobs; typo near mobs → delayed h
 (not instant), spam-mashing typos doesn't melt you; "block" text pops on archer
 dodges; godmode (`baguvix`) blocks everything; death cancels queued hits.
 
-## Stage B — ring & streak dynamics + exit-reset (NOW, after A)
+## Stage B — ring & streak dynamics + exit-reset — IMPLEMENTED 2026-07-19, awaiting [V]
 
-- [ ] Per-weapon `attackRange` state on the player (replaces combat-owned `aoe`);
-      growth-source config (rates, 0=off: `onHit` default-on; `onCorrectType`,
-      `whileMoving`, `whileStationary` available); decay delay ~2.5–3 s; 25% typo
-      cut (constant, flagged for live tuning).
-- [ ] Streak: growth-mode config (`onAttempt` default / `onHit`); freeze when no
-      targets; idle time decay (delay + rate); typo resets.
-- [ ] Explicit fight exit (Alt+X action / Esc-hold / death) resets ALL in-combat
-      meters (streak, all weapons' attackRange).
-- [ ] `exitFight` default rebind Alt+Q → Alt+X (+ stored-settings migration).
-- [ ] HUD/render updated for the new meters.
-- [ ] Pure tests.
+- [I] Per-weapon `attackRange` on the player (`Player.attackRanges`, keyed by
+      weaponType|'unarmed'; `CombatState` lost aoe/streak/idleTime). Config:
+      `RING_DEFAULT` + `RING_BY_WEAPON` overrides; growth SOURCES with a rate each
+      (`onHit` 0.05 default-on; `onCorrectType`/`whileMoving`/`whileStationary` = 0);
+      decay delay 2.75 s, rate 0.4/s; 25% typo cut. Unequipped rings decay in the
+      background; each weapon resumes its own value on switch.
+- [I] Streak on the player (float; HUD floors): `STREAK_GROWTH` config (`onAttempt`
+      default / `onHit` keyed off damageMob's landed-hit return); FREEZES with no
+      targets; idle decay after 5 s at 3/s; only a typo zeroes it instantly.
+- [I] Explicit fight exit (Alt+X / Esc-hold / death) resets ALL in-combat meters;
+      staying in fight preserves them (verified live via synthetic input).
+- [I] `exitFight` default Alt+Q → Alt+X + settings v1→v2 migration (migrates a
+      stored old-default Alt+Q unless Alt+X is taken; custom binds untouched).
+- [I] HUD (streak/AoE readouts, fight-state tag, ult gate) + renderer read the new
+      meters.
+- [I] Tests: 147 green (attack-range dynamics, freeze, idle decay, exit/death
+      reset, per-weapon background decay, settings migration, Alt+X routing).
 
 ## Stage C — targeting system (LATER, lands with the bow)
 

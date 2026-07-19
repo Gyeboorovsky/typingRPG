@@ -1,5 +1,5 @@
 // Every gameplay tuning number lives here.
-import type { Tier } from './types';
+import type { Tier, WeaponType } from './types';
 
 export const SIM_DT = 1 / 60;
 
@@ -12,15 +12,42 @@ export const CAMERA_LERP = 0.15;
 export const MOVE_PER_POINT = 0.02;   // movementSpeed above class base scales PLAYER_SPEED 2%/point (clamped 0.6–1.8×)
 
 // combat / typing
-// AoE damage-ring dynamics (tiles). The ring is a live value on CombatState.aoe:
-// it grows as you type, shrinks when you stop, and drops on a miss — decoupled
-// from `streak` (which now only drives the ultimate).
-export const AOE_MIN = 1.5;            // ring floor / starting radius
-export const AOE_MAX = 5.0;            // ring cap
-export const AOE_GROWTH_PER_CHAR = 0.05; // ring grows this much per correct keystroke
-export const AOE_DECAY_PER_SEC = 0.6;  // ring shrinks this fast while idle
-export const AOE_DECAY_DELAY = 1.0;    // seconds of no typing before the shrink starts
-export const AOE_DROP_ON_MISS = 0.25;  // fraction of the ring lost on a typo
+// Attack-range ring (tiles) — ONE model for every weapon (decision 2026-07-19).
+// The live radius is per-weapon state on the Player (attackRanges): it persists
+// across pack clears and weapon switches WITHIN a fight session; an explicit fight
+// exit resets it. Growth is driven by an extensible per-SOURCE config: a rate per
+// source, 0 = disabled — any future idea ("grows while moving") is a config entry.
+export interface RingGrowth {
+  onHit: number;           // per correct char that actually hit ≥1 mob
+  onCorrectType: number;   // per correct char, hit or not (typing into the air)
+  whileMoving: number;     // per second while moving
+  whileStationary: number; // per second while standing still
+}
+export interface RingConfig {
+  min: number; max: number;
+  dropOnMiss: number;  // fraction of the ring lost on a typo — flagged for live tuning
+                       // (combined with on-miss volleys the total may be too harsh)
+  decayDelay: number;  // seconds of no typing before idle decay starts
+  decayPerSec: number; // idle shrink rate (also the background rate for unequipped weapons)
+  growth: RingGrowth;
+}
+export const RING_DEFAULT: RingConfig = {
+  min: 1.5, max: 5.0,
+  dropOnMiss: 0.25,
+  decayDelay: 2.75, decayPerSec: 0.4,
+  growth: { onHit: 0.05, onCorrectType: 0, whileMoving: 0, whileStationary: 0 },
+};
+// Per-weapon overrides, merged over RING_DEFAULT. The bow's static-range entry
+// (all rates 0) arrives with the weapon-styles stage; until then every weapon
+// rings like a sword.
+export const RING_BY_WEAPON:
+  Partial<Record<WeaponType | 'unarmed', Partial<Omit<RingConfig, 'growth'>> & { growth?: Partial<RingGrowth> }>> = {};
+
+// streak — a bare counter for now (deliberate; the current ult consumes it until the
+// per-class ult rebuild). When it grows is a CONFIG choice (decision 2026-07-19).
+export const STREAK_GROWTH: 'onAttempt' | 'onHit' = 'onAttempt';
+export const STREAK_IDLE_DECAY_DELAY = 5;   // seconds of no typing before the streak starts decaying
+export const STREAK_IDLE_DECAY_PER_SEC = 3; // decay rate (float; HUD floors the display)
 export const PHYS_DAMAGE_SCALE = 0.25; // per-correct-char dmg = round(physicalDamage * this); warrior base 8 → 2/char
 export const WEAPON_ILVL_DMG = 0.5;    // equipped weapon adds itemLevel*this to physicalDamage (ilvl5 → +2.5)
 export const DEFENSE_K = 100;          // melee mitigation: dmg * K/(K+defense); base def 5 → ~4.8% off

@@ -123,16 +123,21 @@ export interface Player {
   godmode: boolean;     // dev cheat: takes zero damage while true. Transient (not saved).
   ultCooldown: number;  // seconds
   animT: number;
+  // --- in-combat meters (transient, never saved). They persist across pack clears
+  // and weapon switches WITHIN a fight session; an EXPLICIT fight exit (exitFight /
+  // Esc-hold / death) resets them all to baseline (decision 2026-07-19). ---
+  streak: number;       // consecutive-correct counter (float — idle decay; HUD floors it). Only a typo zeroes it instantly; no target = freeze.
+  typingIdle: number;   // seconds since the last combat keystroke (drives ring + streak idle decay)
+  attackRanges: Partial<Record<string, number>>; // live per-weapon ring radii, keyed by weaponType | 'unarmed'
 }
 
 export interface CombatState {
   prompt: string;
   typed: number;   // correct chars so far
-  streak: number;  // consecutive correct chars WHILE a target is in the ring; drives the ultimate
   tier: Tier;
   errorFlash: number; // seconds remaining
-  aoe: number;     // current damage-ring radius (tiles); grows on typing, decays when idle, drops on a miss
-  idleTime: number; // seconds since the last keystroke (drives the ring's idle decay)
+  // The ring radius and streak live on Player (attackRanges/streak) so they survive
+  // everything except an explicit fight exit — see Player above.
 }
 
 // Transient render/UI events emitted by the sim, drained each frame.

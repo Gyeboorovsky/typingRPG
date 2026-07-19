@@ -6,14 +6,13 @@ import {
 } from './attributes';
 import { CLASSES } from './classes';
 import {
-  damageMob, grantXp, hurtPlayer, mitigatePlayerDamage, mobAttackStep, resolveKeystroke, stepCombatRing, syncCombat,
+  currentRing, damageMob, grantXp, hurtPlayer, mitigatePlayerDamage, mobAttackStep, resolveKeystroke, stepCombatMeters, syncCombat,
   targetInRange, typingDamage,
 } from './combat';
 import {
-  AOE_DECAY_DELAY, AOE_DECAY_PER_SEC, AOE_DROP_ON_MISS, AOE_GROWTH_PER_CHAR, AOE_MAX, AOE_MIN,
   BOSS_ENRAGE_TYPO_MULT, DROP_REARM_MARGIN, GOLD_PER_COIN, INV_H, INV_PAGE_H, INV_W,
   MAX_LEVEL, MOVE_PER_POINT, PICKUP_RADIUS, PLAYER_SPEED, PROMPT_HP_REWARD_PER_TIER, PROMPT_MP_REWARD,
-  SIM_DT, XP_CURVE,
+  RING_DEFAULT, SIM_DT, STREAK_IDLE_DECAY_DELAY, STREAK_IDLE_DECAY_PER_SEC, XP_CURVE,
 } from './constants';
 import { addToInventory, firstFreeCell, ITEMS, rectFree } from './items';
 import { rollDrops } from './loot';
@@ -50,41 +49,87 @@ function stateWith(mobs: { defId: string; pos: Vec2; hp?: number; shield?: boole
 const NEAR: Vec2 = { x: 24, y: 38 }; // one tile from spawn (24,39)
 const MISS = '\u0000'; // never appears in any prompt
 
-describe('AoE ring dynamics', () => {
-  it('starts at AOE_MIN and grows per correct char, capped at AOE_MAX', () => {
+describe('attack-range ring dynamics (per-weapon, lives on the player)', () => {
+  it('starts at the config floor and grows per HITTING char, capped at max', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR }]);
-    expect(s.combat!.aoe).toBe(AOE_MIN);
-    resolveKeystroke(s, s.combat!.prompt[0]);
-    expect(s.combat!.aoe).toBeCloseTo(AOE_MIN + AOE_GROWTH_PER_CHAR);
-    s.combat!.aoe = AOE_MAX;
+    expect(currentRing(s.player)).toBe(RING_DEFAULT.min);
+    resolveKeystroke(s, s.combat!.prompt[0]); // hits the slime → onHit growth
+    expect(currentRing(s.player)).toBeCloseTo(RING_DEFAULT.min + RING_DEFAULT.growth.onHit);
+    s.player.attackRanges.unarmed = RING_DEFAULT.max;
     resolveKeystroke(s, s.combat!.prompt[s.combat!.typed]);
-    expect(s.combat!.aoe).toBe(AOE_MAX); // capped
+    expect(currentRing(s.player)).toBe(RING_DEFAULT.max); // capped
   });
 
-  it('drops by AOE_DROP_ON_MISS on a typo', () => {
+  it('does NOT grow from typing into the air (onCorrectType source off by default)', () => {
+    const s = stateWith([{ defId: 'slime', pos: { x: 24, y: 30 } }]); // far outside the ring
+    resolveKeystroke(s, s.combat!.prompt[0]);
+    expect(currentRing(s.player)).toBe(RING_DEFAULT.min);
+  });
+
+  it('drops by dropOnMiss on a typo', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR }]);
-    s.combat!.aoe = 4;
+    s.player.attackRanges.unarmed = 4;
     resolveKeystroke(s, MISS);
-    expect(s.combat!.aoe).toBeCloseTo(4 * (1 - AOE_DROP_ON_MISS));
+    expect(currentRing(s.player)).toBeCloseTo(4 * (1 - RING_DEFAULT.dropOnMiss));
   });
 
-  it('shrinks over time once idle past AOE_DECAY_DELAY, floored at AOE_MIN', () => {
+  it('shrinks over time once idle past decayDelay, floored at min', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR }]);
-    s.combat!.aoe = 4;
-    s.combat!.idleTime = AOE_DECAY_DELAY; // already past the grace period
-    stepCombatRing(s, 1); // one second of decay
-    expect(s.combat!.aoe).toBeCloseTo(4 - AOE_DECAY_PER_SEC);
-    s.combat!.aoe = AOE_MIN;
-    stepCombatRing(s, 1);
-    expect(s.combat!.aoe).toBe(AOE_MIN); // floored
+    s.player.attackRanges.unarmed = 4;
+    s.player.typingIdle = RING_DEFAULT.decayDelay; // already past the grace period
+    stepCombatMeters(s, 1); // one second of decay
+    expect(currentRing(s.player)).toBeCloseTo(4 - RING_DEFAULT.decayPerSec);
+    s.player.attackRanges.unarmed = RING_DEFAULT.min;
+    stepCombatMeters(s, 1);
+    expect(currentRing(s.player)).toBe(RING_DEFAULT.min); // floored
   });
 
   it('does not decay during the grace period', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR }]);
-    s.combat!.aoe = 4;
-    s.combat!.idleTime = 0;
-    stepCombatRing(s, AOE_DECAY_DELAY / 2); // still within the delay
-    expect(s.combat!.aoe).toBe(4);
+    s.player.attackRanges.unarmed = 4;
+    s.player.typingIdle = 0;
+    stepCombatMeters(s, RING_DEFAULT.decayDelay / 3); // still within the delay
+    expect(currentRing(s.player)).toBe(4);
+  });
+
+  it('unequipped weapons keep their own decaying rings (per-weapon persistence)', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    s.player.attackRanges.sword = 4;    // a ring earned earlier with a sword
+    s.player.attackRanges.unarmed = 3;  // currently unarmed
+    stepCombatMeters(s, 1);             // within the active grace period…
+    expect(s.player.attackRanges.unarmed).toBe(3);                       // active: no decay yet
+    expect(s.player.attackRanges.sword).toBeCloseTo(4 - RING_DEFAULT.decayPerSec); // background: decays
+  });
+});
+
+describe('streak & exit-reset (Stage B)', () => {
+  it('idle decay shrinks the streak after its delay (float; typo still zeroes)', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    s.player.streak = 10;
+    s.player.typingIdle = STREAK_IDLE_DECAY_DELAY;
+    stepCombatMeters(s, 1);
+    expect(s.player.streak).toBeCloseTo(10 - STREAK_IDLE_DECAY_PER_SEC);
+    resolveKeystroke(s, MISS);
+    expect(s.player.streak).toBe(0);
+  });
+
+  it('explicit fight exit resets streak AND every weapon ring; staying in fight keeps them', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    s.player.streak = 20;
+    s.player.attackRanges = { unarmed: 4, sword: 3.5 };
+    update(s, [{ type: 'setMode', mode: 'travel' }], SIM_DT); // routes through exitFight
+    expect(s.player.streak).toBe(0);
+    expect(s.player.attackRanges).toEqual({});
+  });
+
+  it('death resets the in-combat meters too', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    s.player.streak = 15;
+    s.player.attackRanges = { unarmed: 4 };
+    hurtPlayer(s, 99999);
+    expect(s.player.dead).toBe(true);
+    expect(s.player.streak).toBe(0);
+    expect(s.player.attackRanges).toEqual({});
   });
 });
 
@@ -98,7 +143,7 @@ describe('resolveKeystroke', () => {
     resolveKeystroke(s, s.combat!.prompt[0]);
     expect(s.mobs[0].hp).toBe(MOBS.slime.hp - dmg);
     expect(s.mobs[1].hp).toBe(MOBS.slime.hp);
-    expect(s.combat!.streak).toBe(1);
+    expect(s.player.streak).toBe(1);
     expect(s.combat!.typed).toBe(1);
   });
 
@@ -107,10 +152,10 @@ describe('resolveKeystroke', () => {
       { defId: 'slime', pos: NEAR },                 // dist 1 ≤ slime attackRange 1.2
       { defId: 'cultist', pos: { x: 24, y: 34 } },   // dist 5 > cultist attackRange 1.4
     ]);
-    s.combat!.streak = 12;
+    s.player.streak = 12;
     const hp = s.player.hp;
     resolveKeystroke(s, MISS);
-    expect(s.combat!.streak).toBe(0);
+    expect(s.player.streak).toBe(0);
     expect(s.player.hp).toBe(hp); // no instant damage — the blow is scheduled, not dealt
     expect(s.mobs[0].pendingOnMiss).not.toBeNull();
     expect(s.mobs[0].onMissCd).toBe(MOBS.slime.onMiss!.cooldown);
@@ -718,7 +763,7 @@ describe('routeKeydown (pure keystroke router)', () => {
   });
 
   it('fight: an Alt/Ctrl combat combo fires without emitting a typed char', () => {
-    const res = r('fight', false, k({ code: 'KeyQ', key: 'q', altKey: true }), true); // exitFight = Alt+Q
+    const res = r('fight', false, k({ code: 'KeyX', key: 'x', altKey: true }), true); // exitFight = Alt+X
     expect(res.mode).toBe('travel');
     expect(res.events).toEqual([{ type: 'setMode', mode: 'travel' }]);
     expect(res.events.some((e) => e.type === 'char')).toBe(false);
@@ -923,6 +968,39 @@ describe('keybind validation + conflicts', () => {
     } finally {
       gt.localStorage = prev;
     }
+  });
+
+  it('v1→v2 settings migration moves a stored old-default Alt+Q exitFight to Alt+X', () => {
+    const load = (stored: object): Keymap => {
+      const store: Record<string, string> = { 'typingRPG.settings': JSON.stringify(stored) };
+      const gt = globalThis as { localStorage?: unknown };
+      const prev = gt.localStorage;
+      gt.localStorage = { getItem: (key: string) => store[key] ?? null, setItem: () => {}, removeItem: () => {} };
+      try { return loadSettings(); } finally { gt.localStorage = prev; }
+    };
+    // old default Alt+Q → migrated to the new Alt+X default
+    const migrated = load({ version: 1, combatModifier: 'alt',
+      bindings: { exitFight: { code: 'KeyQ', alt: true, ctrl: false } } });
+    expect(migrated.bindings.exitFight).toEqual({ code: 'KeyX', alt: true, ctrl: false });
+    // a custom (non-Alt+Q) bind is left alone
+    const custom = load({ version: 1, combatModifier: 'alt',
+      bindings: { exitFight: { code: 'KeyZ', alt: true, ctrl: false } } });
+    expect(custom.bindings.exitFight).toEqual({ code: 'KeyZ', alt: true, ctrl: false });
+    // Alt+X occupied by another action → migration backs off (no conflict created)
+    const taken = load({ version: 1, combatModifier: 'alt',
+      bindings: {
+        exitFight: { code: 'KeyQ', alt: true, ctrl: false },
+        toggleInventory: { code: 'KeyX', alt: true, ctrl: false },
+      } });
+    expect(taken.bindings.exitFight).toEqual({ code: 'KeyQ', alt: true, ctrl: false });
+    // v2 data is not touched
+    const v2 = load({ version: 2, combatModifier: 'alt',
+      bindings: { exitFight: { code: 'KeyQ', alt: true, ctrl: false } } });
+    expect(v2.bindings.exitFight).toEqual({ code: 'KeyQ', alt: true, ctrl: false });
+  });
+
+  it('the factory default for exitFight is Alt+X', () => {
+    expect(DEFAULT_KEYMAP.bindings.exitFight).toEqual({ code: 'KeyX', alt: true, ctrl: false });
   });
 });
 
@@ -1230,7 +1308,7 @@ describe('combat model (one state, dynamic ring)', () => {
     update(s, [{ type: 'setMode', mode: 'fight' }], SIM_DT);
     expect(s.mode).toBe('fight');
     expect(s.combat).not.toBeNull();
-    expect(s.combat!.aoe).toBe(AOE_MIN);
+    expect(currentRing(s.player)).toBe(RING_DEFAULT.min);
     expect(targetInRange(s)).toBe(false);
   });
 
@@ -1239,7 +1317,7 @@ describe('combat model (one state, dynamic ring)', () => {
     s.mode = 'fight';
     s.mobs = [idleMob('slime', { x: 24, y: 37 }, 1)]; // 2 tiles from spawn — outside the base ring
     syncCombat(s);
-    s.combat!.aoe = 3; // grow the ring to reach it
+    s.player.attackRanges.unarmed = 3; // grow the ring to reach it
     const hp0 = s.mobs[0].hp;
     resolveKeystroke(s, s.combat!.prompt[0]);
     expect(s.mobs[0].hp).toBeLessThan(hp0); // hit
@@ -1253,30 +1331,31 @@ describe('combat model (one state, dynamic ring)', () => {
       idleMob('slime', { x: 24, y: 38 }, 1, 0), // in the ring
       idleMob('slime', { x: 24, y: 37 }, 2, 0), // out of the ring, same spot, within PACK_LINK_RADIUS
     ];
-    syncCombat(s);
-    s.combat!.aoe = AOE_MIN; // only mob 1 is in range
+    syncCombat(s); // ring at its floor — only mob 1 is in range
     resolveKeystroke(s, s.combat!.prompt[0]);
     expect(s.mobs.find((m) => m.id === 1)!.state).toBe('aggro'); // hit
     expect(s.mobs.find((m) => m.id === 2)!.state).toBe('aggro'); // pack-linked, though not in the ring
   });
 
-  it('streak builds only while a target is in the ring, resets to 0 when none is', () => {
+  it('streak grows on attack and FREEZES when nothing is in range (only a typo resets)', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR }]); // aggro slime, in range
     resolveKeystroke(s, s.combat!.prompt[s.combat!.typed]);
-    expect(s.combat!.streak).toBe(1);
+    expect(s.player.streak).toBe(1);
     s.mobs = []; // nothing in range now
     resolveKeystroke(s, s.combat!.prompt[s.combat!.typed]);
-    expect(s.combat!.streak).toBe(0);
+    expect(s.player.streak).toBe(1); // frozen — an empty field never resets it
+    resolveKeystroke(s, MISS);
+    expect(s.player.streak).toBe(0); // …only a typo does
   });
 
   it('the ring persists (does not reset) after the last mob is killed', () => {
     const s = stateWith([{ defId: 'slime', pos: NEAR, hp: 1 }]);
-    s.combat!.aoe = 3;
+    s.player.attackRanges.unarmed = 3;
     resolveKeystroke(s, s.combat!.prompt[0]); // kills the slime
     syncCombat(s);
     expect(s.mobs).toHaveLength(0);
     expect(s.combat).not.toBeNull();
-    expect(s.combat!.aoe).toBeGreaterThan(AOE_MIN); // ring kept its size
+    expect(currentRing(s.player)).toBeGreaterThan(RING_DEFAULT.min); // ring kept its size
   });
 
   it('syncCombat clears combat for a dead player (no stray prompt box)', () => {
@@ -1299,7 +1378,7 @@ describe('combat model (one state, dynamic ring)', () => {
     s.mobs = [idleMob('dummy', { x: 24, y: 38 }, 1)]; // within aggroRadius of spawn
     update(s, [], SIM_DT); // mobStep would auto-aggro an aggressive mob here
     expect(s.mobs[0].state).toBe('idle');
-    s.combat!.aoe = 2; // ring reaches the dummy
+    s.player.attackRanges.unarmed = 2; // ring reaches the dummy
     resolveKeystroke(s, s.combat!.prompt[0]);
     expect(s.mobs[0].state).toBe('aggro'); // pulled by the hit, not by proximity
   });
