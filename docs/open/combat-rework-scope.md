@@ -11,26 +11,30 @@ remaining detail calls; user verifies live and corrections come as fixes.
 
 ---
 
-## Stage A — mob damage model + aggro rework (NOW)
+## Stage A — mob damage model + aggro rework — IMPLEMENTED 2026-07-19, awaiting [V]
 
-- [ ] Mob config: `attackRange` (independent of `aggroRadius`), periodic physical +
-      magical attacks (period + damage, either optional), on-miss special attack +
-      per-mob cooldown, `attackShape` as data (`single` implemented), attack-range
-      ring visualization params.
-- [ ] `mob.target` field (always the player today).
-- [ ] Two-path aggro: damage-aggro (any mob, one path) + proximity-aggro (only
-      `aggressive: true`); no other aggro sources.
-- [ ] Ranged AI: mobs approach only to their attack range; mixed melee/ranged packs
-      work.
-- [ ] Typo → on-miss volleys: only mobs with player in THEIR attack range; 50–200 ms
-      jitter; per-mob cooldown; cancelled on player death; old typo-damage path
-      removed.
-- [ ] Periodic attacks tick independently of typing, per-mob phase jitter at aggro.
-- [ ] Percentage defense `dmg * k/(k+def)` + dodge from def/atk relation (config room
-      for `evasion`); ALL damage through `hurtPlayer`.
-- [ ] Render: faint transparent attack-range rings around mobs (config).
-- [ ] Floating text: per-attack numbers; `block` shown where damage numbers appear.
-- [ ] Pure tests for every sim-side behavior above.
+- [I] Mob config: `attackRange`, periodic physical + magical channels, on-miss
+      special + per-mob cooldown, `attackShape` as data, mob-side `defense`/`dodge`.
+      New ranged mob: **Bone Archer** (spot at 34,15; placeholder cultist sprite).
+- [I] `mob.target` field (always the player today; cleared on leash/death).
+- [I] Two-path aggro: `damageMob` aggro-pulls on the ATTEMPT (even shield-blocked);
+      proximity only for `aggressive: true`. No other `aggroMob` callers.
+- [I] Ranged AI: stop at `max(MOB_STOP_DIST, attackRange − RANGED_APPROACH_MARGIN)`.
+- [I] Typo → on-miss volleys: only mobs targeting the player with them inside THEIR
+      attackRange; 50–200 ms hash-jitter (no rng consumption); per-mob cooldown
+      absorbs spam; cancelled on death; old instant typo-damage removed.
+- [I] Periodic attacks tick in real time; per-mob phase jitter at aggro (hash-based).
+- [I] Player-side mitigation `mitigatePlayerDamage(raw, kind)` (kind = seam for a
+      future magicDefense); mob-side dodge → floating "block" + percentage defense;
+      ALL damage through `hurtPlayer` (godmode/RNG intact).
+- [I] Render: faint attack-range rings on aggroed mobs (`PAL.mobRangeRing`+alpha).
+- [I] Floating text: per-attack numbers; "block" particle.
+- [I] 10 new pure tests; suite 140 green; build green.
+
+**Manual [V] checklist (DOM/visual — user):** archer pack at (34,15) keeps distance
+and shoots; faint orange rings around aggroed mobs; typo near mobs → delayed hits
+(not instant), spam-mashing typos doesn't melt you; "block" text pops on archer
+dodges; godmode (`baguvix`) blocks everything; death cancels queued hits.
 
 ## Stage B — ring & streak dynamics + exit-reset (NOW, after A)
 

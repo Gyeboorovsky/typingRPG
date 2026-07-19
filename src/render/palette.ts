@@ -29,7 +29,11 @@ export const PAL = {
 
   ring: '#ffd75e',
   exitRing: '#ff5a5a',  // Esc hold-to-exit progress ring (track = same color, lower alpha)
+  // Per-mob attack-range rings (aggroed mobs only): faint, highly transparent —
+  // the alpha lives here with the color so the whole look is one config knob.
+  mobRangeRing: '#ff8a5e', mobRangeRingAlpha: 0.14,
   mobBarBack: 'rgba(0,0,0,0.55)', mobBarFill: '#e0484f',
   dmgText: '#ffffff', hurtText: '#ff6b6b', xpText: '#ffd75e',
+  blockText: '#9fb4c8', // mob dodged/blocked the player's hit
   burst: '#ffd75e', shieldBurst: '#5fc9f0',
 };

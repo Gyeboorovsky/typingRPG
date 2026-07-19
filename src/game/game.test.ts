@@ -6,7 +6,7 @@ import {
 } from './attributes';
 import { CLASSES } from './classes';
 import {
-  damageMob, grantXp, meleeMitigatedDamage, resolveKeystroke, stepCombatRing, syncCombat,
+  damageMob, grantXp, hurtPlayer, mitigatePlayerDamage, mobAttackStep, resolveKeystroke, stepCombatRing, syncCombat,
   targetInRange, typingDamage,
 } from './combat';
 import {
@@ -40,6 +40,9 @@ function stateWith(mobs: { defId: string; pos: Vec2; hp?: number; shield?: boole
     id: i + 1, defId: m.defId, pos: { ...m.pos }, hp: m.hp ?? MOBS[m.defId].hp,
     state: 'aggro', spotIdx: 0, home: { ...m.pos },
     shield: m.shield ?? false, shieldsUsed: m.shieldsUsed ?? 0,
+    // Periodic timers start far in the future so tests exercising other paths are
+    // not polluted by incidental mob blows; attack tests set physT/magT explicitly.
+    target: 'player', physT: 999, magT: 999, onMissCd: 0, pendingOnMiss: null,
   }));
   syncCombat(s);
   return s;
@@ -99,19 +102,44 @@ describe('resolveKeystroke', () => {
     expect(s.combat!.typed).toBe(1);
   });
 
-  it('a typo resets the streak and hurts by the hardest engaged tier (defense-mitigated)', () => {
+  it('a typo resets the streak and schedules on-miss ONLY from mobs with the player in THEIR attack range', () => {
     const s = stateWith([
-      { defId: 'slime', pos: NEAR },
-      { defId: 'cultist', pos: { x: 23, y: 38 } },
+      { defId: 'slime', pos: NEAR },                 // dist 1 ≤ slime attackRange 1.2
+      { defId: 'cultist', pos: { x: 24, y: 34 } },   // dist 5 > cultist attackRange 1.4
     ]);
     s.combat!.streak = 12;
-    const a = effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment);
-    const dodged = rand({ rng: s.rng }) * 100 < a.dodge; // probe the same roll, without consuming s.rng
-    const expected = dodged ? 0 : Math.round(MOBS.cultist.typoDamage * 100 / (100 + a.defense));
     const hp = s.player.hp;
     resolveKeystroke(s, MISS);
-    expect(hp - s.player.hp).toBe(expected);
     expect(s.combat!.streak).toBe(0);
+    expect(s.player.hp).toBe(hp); // no instant damage — the blow is scheduled, not dealt
+    expect(s.mobs[0].pendingOnMiss).not.toBeNull();
+    expect(s.mobs[0].onMissCd).toBe(MOBS.slime.onMiss!.cooldown);
+    expect(s.mobs[1].pendingOnMiss).toBeNull(); // out of ITS reach → typo is free
+  });
+
+  it('a scheduled on-miss lands after its jitter via mobAttackStep, defense-mitigated', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    resolveKeystroke(s, MISS);
+    const a = effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment);
+    const dodged = rand({ rng: s.rng }) * 100 < a.dodge; // probe the landing's roll without consuming s.rng
+    const expected = dodged ? 0 : Math.round(MOBS.slime.onMiss!.damage * 100 / (100 + a.defense));
+    const hp = s.player.hp;
+    mobAttackStep(s, 0.25); // > MOB_ONMISS_JITTER_MAX — the volley lands
+    expect(hp - s.player.hp).toBe(expected);
+    expect(s.mobs[0].pendingOnMiss).toBeNull();
+  });
+
+  it('the per-mob cooldown absorbs typo spam; a new volley fires once it expires', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    resolveKeystroke(s, MISS);
+    resolveKeystroke(s, MISS); // inside the pending window — absorbed
+    expect(s.mobs[0].pendingOnMiss).not.toBeNull();
+    mobAttackStep(s, 0.25); // first volley lands
+    resolveKeystroke(s, MISS); // still on cooldown — absorbed
+    expect(s.mobs[0].pendingOnMiss).toBeNull();
+    mobAttackStep(s, MOBS.slime.onMiss!.cooldown); // cooldown runs out
+    resolveKeystroke(s, MISS);
+    expect(s.mobs[0].pendingOnMiss).not.toBeNull();
   });
 
   it('completing a prompt grants mana and starts a fresh one', () => {
@@ -153,11 +181,12 @@ describe('boss (Typhon)', () => {
   it('punishes typos 1.5x harder when enraged (≤50% HP), then applies defense', () => {
     const s = stateWith([{ defId: 'typhon', pos: NEAR, hp: 150 }]);
     const a = effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment);
-    const raw = Math.round(MOBS.typhon.typoDamage * BOSS_ENRAGE_TYPO_MULT);
+    const raw = Math.round(MOBS.typhon.onMiss!.damage * BOSS_ENRAGE_TYPO_MULT);
     const dodged = rand({ rng: s.rng }) * 100 < a.dodge;
     const expected = dodged ? 0 : Math.round(raw * 100 / (100 + a.defense));
     const hp = s.player.hp;
-    resolveKeystroke(s, MISS);
+    resolveKeystroke(s, MISS);          // schedules the enrage-boosted special
+    mobAttackStep(s, 0.25);             // it lands (enrage read at landing time)
     expect(hp - s.player.hp).toBe(expected);
   });
 });
@@ -562,7 +591,7 @@ describe('defense & dodge (seeded melee mitigation)', () => {
     const a = effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment);
     const roll = rand({ rng: s.rng }) * 100; // probe the same roll without consuming s.rng
     const expected = roll < a.dodge ? 0 : Math.round(50 * 100 / (100 + a.defense));
-    expect(meleeMitigatedDamage(s, 50)).toBe(expected);
+    expect(mitigatePlayerDamage(s, 50)).toBe(expected);
   });
 
   it('dodge negates the hit entirely when dodge exceeds any roll', () => {
@@ -570,7 +599,7 @@ describe('defense & dodge (seeded melee mitigation)', () => {
     s.rng = 999;
     s.player.stats = { ...emptyStats(), DEX: 300 }; // dodge >> 100, so every [0,100) roll dodges
     expect(effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment).dodge).toBeGreaterThan(100);
-    expect(meleeMitigatedDamage(s, 50)).toBe(0);
+    expect(mitigatePlayerDamage(s, 50)).toBe(0);
   });
 });
 
@@ -913,6 +942,7 @@ describe('travelUnlocked movement gate (combat-modifier unlock)', () => {
     s.mobs = [{
       id: 1, defId: 'slime', pos: { ...NEAR }, hp: MOBS.slime.hp,
       state: 'aggro', spotIdx: 0, home: { ...NEAR }, shield: false, shieldsUsed: 0,
+      target: 'player', physT: 999, magT: 999, onMissCd: 0, pendingOnMiss: null,
     }];
     return s;
   };
@@ -1070,11 +1100,15 @@ describe('godmode cheat', () => {
     expect(s.player.godmode).toBe(false);
   });
 
-  it('zeroes typo damage while consuming rng identically (guard is inside hurtPlayer)', () => {
+  it('zeroes on-miss damage while consuming rng identically (guard is inside hurtPlayer)', () => {
     const setup = (): GameState => { const s = stateWith([{ defId: 'boar', pos: NEAR }]); s.player.hp = 5000; return s; };
     const on = setup(); on.player.godmode = true;
     const off = setup();
-    for (let i = 0; i < 5; i++) { resolveKeystroke(on, MISS); resolveKeystroke(off, MISS); } // MISS is always a typo
+    for (let i = 0; i < 5; i++) { // typo → let the volley land → let the cooldown expire
+      resolveKeystroke(on, MISS); resolveKeystroke(off, MISS);
+      mobAttackStep(on, 0.25); mobAttackStep(off, 0.25);
+      mobAttackStep(on, MOBS.boar.onMiss!.cooldown); mobAttackStep(off, MOBS.boar.onMiss!.cooldown);
+    }
     expect(on.player.hp).toBe(5000);          // godmode blocked every hit
     expect(off.player.hp).toBeLessThan(5000); // normal play took damage
     expect(on.rng).toBe(off.rng);             // dodge rolls advanced the seed identically on/off
@@ -1107,6 +1141,7 @@ describe('control modes (travel / fight)', () => {
     s.mobs = [{
       id: 1, defId: 'slime', pos: { ...NEAR }, hp: MOBS.slime.hp,
       state: 'aggro', spotIdx: 0, home: { ...NEAR }, shield: false, shieldsUsed: 0,
+      target: 'player', physT: 999, magT: 999, onMissCd: 0, pendingOnMiss: null,
     }];
     update(s, [{ type: 'setMode', mode: 'fight' }], SIM_DT);
     expect(s.mode).toBe('fight');
@@ -1186,6 +1221,7 @@ describe('combat model (one state, dynamic ring)', () => {
   const idleMob = (defId: string, pos: Vec2, id: number, spotIdx = id): Mob => ({
     id, defId, pos: { ...pos }, hp: MOBS[defId].hp,
     state: 'idle', spotIdx, home: { ...pos }, shield: false, shieldsUsed: 0,
+    target: null, physT: 999, magT: 999, onMissCd: 0, pendingOnMiss: null,
   });
 
   it('entering fight with no mob stays in fight with a no-target ring (Chill)', () => {
@@ -1275,5 +1311,103 @@ describe('combat model (one state, dynamic ring)', () => {
     expect(s.mobs).toHaveLength(0);
     expect(s.player.xp).toBe(xp0);
     expect(s.drops).toHaveLength(0);
+  });
+});
+
+describe('mob offense & aggro rework (Stage A)', () => {
+  const spawnIdle = (s: GameState, defId: string, pos: Vec2, id = 90): Mob => {
+    const m: Mob = {
+      id, defId, pos: { ...pos }, hp: MOBS[defId].hp,
+      state: 'idle', spotIdx: 0, home: { ...pos }, shield: false, shieldsUsed: 0,
+      target: null, physT: 999, magT: 999, onMissCd: 0, pendingOnMiss: null,
+    };
+    s.mobs.push(m);
+    return m;
+  };
+
+  it('damage aggro fires even on an ATTEMPT (shielded target still turns on you)', () => {
+    const s = newGame(1);
+    s.mobs = [];
+    const m = spawnIdle(s, 'typhon', { x: 24, y: 30 });
+    m.shield = true;
+    const hp0 = m.hp;
+    damageMob(s, m, 50);
+    expect(m.hp).toBe(hp0);            // shield blocked the damage…
+    expect(m.state).toBe('aggro');     // …but the attempt aggroed it
+    expect(m.target).toBe('player');
+  });
+
+  it('a ranged mob approaches only to the edge of its own attack range', () => {
+    const s = newGame(1);
+    s.mobs = [];
+    const m = spawnIdle(s, 'archer', { x: 24, y: 31 });
+    m.state = 'aggro'; m.target = 'player';
+    for (let i = 0; i < 600; i++) update(s, [], SIM_DT); // 10s — plenty to settle
+    const d = Math.hypot(m.pos.x - s.player.pos.x, m.pos.y - s.player.pos.y);
+    expect(d).toBeLessThanOrEqual(5.05);  // stopAt = attackRange 5.5 − margin 0.5
+    expect(d).toBeGreaterThan(4.0);       // …but it does NOT walk into melee
+  });
+
+  it('a periodic physical blow lands through hurtPlayer only while in range', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    const a = effectiveAttributes(s.player.classId, s.player.stats, s.player.equipment);
+    const dodged = rand({ rng: s.rng }) * 100 < a.dodge;
+    const expected = dodged ? 0 : Math.round(MOBS.slime.attacks!.physical!.damage * 100 / (100 + a.defense));
+    s.mobs[0].physT = 0.05;
+    const hp = s.player.hp;
+    mobAttackStep(s, 0.1);
+    expect(hp - s.player.hp).toBe(expected);
+    expect(s.mobs[0].physT).toBeCloseTo(MOBS.slime.attacks!.physical!.period - 0.05, 5);
+  });
+
+  it('periodic timers hold while the player is outside the mob attack range', () => {
+    const s = stateWith([{ defId: 'slime', pos: { x: 24, y: 33 } }]); // 6 tiles away
+    s.mobs[0].physT = 0.05;
+    const hp = s.player.hp;
+    mobAttackStep(s, 0.1);
+    expect(s.player.hp).toBe(hp);
+    expect(s.mobs[0].physT).toBe(0.05); // did not tick out of range
+  });
+
+  it('godmode blocks periodic mob damage too (single hurtPlayer choke point)', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }]);
+    s.player.godmode = true;
+    s.mobs[0].physT = 0.05;
+    const hp = s.player.hp;
+    mobAttackStep(s, 0.1);
+    expect(s.player.hp).toBe(hp);
+  });
+
+  it('player death cancels every scheduled on-miss (no post-respawn ghost volleys)', () => {
+    const s = stateWith([{ defId: 'slime', pos: NEAR }, { defId: 'boar', pos: NEAR }]);
+    resolveKeystroke(s, MISS);
+    expect(s.mobs.some((m) => m.pendingOnMiss !== null)).toBe(true);
+    hurtPlayer(s, 99999); // lethal
+    expect(s.player.dead).toBe(true);
+    for (const m of s.mobs) {
+      expect(m.pendingOnMiss).toBeNull();
+      expect(m.target).toBeNull();
+    }
+  });
+
+  it('mob dodge shows a floating "block" and deals nothing; hits and blocks both occur (seeded)', () => {
+    const s = stateWith([{ defId: 'archer', pos: NEAR }]); // dodge 8%
+    let blocks = 0, hits = 0;
+    for (let i = 0; i < 60; i++) {
+      s.mobs[0].hp = 999; // keep it alive
+      s.fx.length = 0;
+      damageMob(s, s.mobs[0], 5);
+      if (s.fx.some((f) => f.kind === 'block')) { blocks++; expect(s.mobs[0].hp).toBe(999); }
+      if (s.fx.some((f) => f.kind === 'dmg')) hits++;
+    }
+    expect(blocks).toBeGreaterThan(0);
+    expect(hits).toBeGreaterThan(blocks);
+  });
+
+  it('mob percentage defense softens the player hit (typhon def 10 → 100 becomes 91)', () => {
+    const s = stateWith([{ defId: 'typhon', pos: NEAR }]);
+    const hp0 = s.mobs[0].hp;
+    damageMob(s, s.mobs[0], 100);
+    expect(hp0 - s.mobs[0].hp).toBe(Math.round(100 * 100 / (100 + 10)));
   });
 });

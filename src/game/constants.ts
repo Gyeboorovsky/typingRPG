@@ -53,7 +53,15 @@ export const MAX_LEVEL = 120;         // Metin2's cap. Used ONLY as the set-leve
 
 // mobs
 export const LEASH_DIST = 10;         // tiles from home before mob resets
-export const MOB_STOP_DIST = 0.8;     // mobs stop this close to the player
+export const MOB_STOP_DIST = 0.8;     // melee mobs stop this close to the player
+// Ranged AI: a mob stops approaching at max(MOB_STOP_DIST, attackRange − this margin),
+// so archer-types hold position just inside their own attack range (Metin2-style).
+export const RANGED_APPROACH_MARGIN = 0.5;
+// On-miss volley jitter (seconds): each triggered mob lands its special after a small
+// random-feeling delay so a pack's punishment reads as a stream, not one frame-slam.
+// Derived from a per-mob hash, NOT state.rng — combat timing must never shift loot rolls.
+export const MOB_ONMISS_JITTER_MIN = 0.05;
+export const MOB_ONMISS_JITTER_MAX = 0.2;
 export const PACK_LINK_RADIUS = 2;    // same-spot mobs this close to an aggroed mob join in
 export const MOB_SEPARATION = 0.45;   // min distance between mobs (soft push)
 export const RESPAWN_SECONDS = 15;

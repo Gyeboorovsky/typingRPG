@@ -52,14 +52,33 @@ export interface ItemDef {
 }
 export interface ItemStack { defId: string; qty: number; plus?: number }
 
+// One periodic attack channel (physical or magical): a blow every `period`
+// seconds while the mob's target is inside its attackRange.
+export interface MobAttackDef { damage: number; period: number }
+
 export interface MobDef {
   id: string; name: string; tier: Tier;
-  hp: number; typoDamage: number; xp: number;
+  hp: number; xp: number;
   speed: number; aggroRadius: number;
+  // Combat reach (tiles) — independent of aggroRadius. The mob attacks (periodic
+  // channels + on-miss special) only while its target is inside this; ranged mobs
+  // also stop approaching once the target is within it (Metin2-archer AI).
+  attackRange: number;
+  // Periodic attack channels; either may be absent (a mob with none never attacks
+  // on a timer — e.g. the training dummy could drop these entirely).
+  attacks?: { physical?: MobAttackDef; magical?: MobAttackDef };
+  // The special attack fired when the player typos within attackRange (replaces the
+  // old abstract typoDamage). `cooldown` (seconds) gates typo spam per mob.
+  onMiss?: { damage: number; kind: 'physical' | 'magical'; cooldown: number };
+  // Mob-side mitigation of the PLAYER's hits: percentage defense (same K-formula as
+  // the player's) and dodge% (a dodged hit shows a floating "block", deals nothing).
+  defense?: number;
+  dodge?: number;
+  // DATA only for the multiplayer future — every shape behaves as 'single' today.
+  attackShape?: 'single' | 'aoe' | 'projectileAoe';
   boss?: boolean;
   // Undefined/true = aggressive: self-aggroes when the player enters aggroRadius.
-  // false = passive: never self-aggroes; only ever engages when hit by the AoE
-  // ring (a pure training target that stays put until you attack it).
+  // false = passive: never self-aggroes; only ever engages when damaged.
   aggressive?: boolean;
   drops: { itemId: string; chance: number; min: number; max: number }[];
 }
@@ -73,6 +92,13 @@ export interface Mob {
   home: Vec2;
   shield: boolean;      // boss: immune until a flawless prompt
   shieldsUsed: number;  // boss: shield phases consumed (max 2)
+  // Who this mob is attacking. Always the local player today; multiplayer swaps
+  // this for a player id without rewriting the damage path (decision 2026-07-19).
+  target: 'player' | null;
+  physT: number;        // seconds until the next physical blow (phase-jittered at aggro)
+  magT: number;         // seconds until the next magical blow
+  onMissCd: number;     // seconds left of the on-miss cooldown (gates typo spam)
+  pendingOnMiss: number | null; // scheduled on-miss special: seconds until it lands (null = none)
 }
 
 export interface SpawnSpot { defId: string; center: Vec2; count: number; radius: number }
@@ -112,6 +138,7 @@ export interface CombatState {
 // Transient render/UI events emitted by the sim, drained each frame.
 export type Fx =
   | { kind: 'dmg'; pos: Vec2; value: number }        // damage dealt to a mob
+  | { kind: 'block'; pos: Vec2 }                     // mob dodged/blocked the player's hit (shows where dmg numbers do)
   | { kind: 'hurt'; pos: Vec2; value: number }       // damage taken by player
   | { kind: 'xp'; pos: Vec2; value: number }
   | { kind: 'ult'; pos: Vec2; radius: number }

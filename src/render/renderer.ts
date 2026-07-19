@@ -88,6 +88,23 @@ export class Renderer {
       ctx.lineWidth = 1;
     }
 
+    // Faint per-mob attack-range rings (aggroed mobs only) — shows the zone where
+    // that mob's periodic blows and on-miss punishment can reach you.
+    ctx.strokeStyle = PAL.mobRangeRing;
+    ctx.globalAlpha = PAL.mobRangeRingAlpha;
+    ctx.lineWidth = 1.5;
+    for (const m of state.mobs) {
+      if (m.state !== 'aggro') continue;
+      const r = MOBS[m.defId].attackRange;
+      const sx = projX(m.pos.x, m.pos.y) - cx, sy = projY(m.pos.x, m.pos.y) - cy;
+      if (sx < -300 || sx > viewW + 300 || sy < -300 || sy > viewH + 300) continue;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, r * IX * SQ2, r * IY * SQ2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+
     // entity pass: props + mobs + drops + player, depth-sorted by x+y.
     // Push order matches insertion order and the sort is stable, so draw
     // order is identical to the old closure-based pass.
@@ -171,6 +188,7 @@ export class Renderer {
   private intakeFx(fx: Fx[], pp: Vec2, t: number): void {
     for (const f of fx) {
       if (f.kind === 'dmg') this.particles.push({ wx: f.pos.x, wy: f.pos.y, text: `${f.value}`, color: PAL.dmgText, born: t });
+      else if (f.kind === 'block') this.particles.push({ wx: f.pos.x, wy: f.pos.y, text: 'block', color: PAL.blockText, born: t });
       else if (f.kind === 'hurt') this.particles.push({ wx: pp.x, wy: pp.y, text: `-${f.value}`, color: PAL.hurtText, born: t });
       else if (f.kind === 'xp') this.particles.push({ wx: f.pos.x, wy: f.pos.y, text: `+${f.value} XP`, color: PAL.xpText, born: t });
       else if (f.kind === 'ult') this.bursts.push({ wx: f.pos.x, wy: f.pos.y, r: f.radius, color: PAL.burst, born: t });

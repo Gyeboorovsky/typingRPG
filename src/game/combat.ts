@@ -7,10 +7,11 @@ import { classOf } from './classes';
 import {
   AOE_DECAY_DELAY, AOE_DECAY_PER_SEC, AOE_DROP_ON_MISS, AOE_GROWTH_PER_CHAR, AOE_MAX, AOE_MIN,
   BOSS_ENRAGE_HP, BOSS_ENRAGE_TYPO_MULT, BOSS_SHIELD_AT, CHILL_FALLBACK_TIER, DEFENSE_K,
+  MOB_ONMISS_JITTER_MAX, MOB_ONMISS_JITTER_MIN,
   PROMPT_HP_REWARD_PER_TIER, PROMPT_MP_REWARD, ULT_DAMAGE, ULT_RADIUS_MULT, XP_CURVE,
 } from './constants';
 import { rollDrops } from './loot';
-import { aggroMob, MOBS, respawnDelayFor } from './mobs';
+import { aggroMob, MOBS, mobPhase, respawnDelayFor } from './mobs';
 import { rand } from './rng';
 import { promptFor } from './words';
 import type { GameState, Mob, Player, Tier } from './types';
@@ -20,10 +21,13 @@ import { dist, playerWorldPos } from './types';
 export const typingDamage = (p: Player): number =>
   physCharDamage(playerAttributes(p));
 
-/** Apply defense mitigation and roll dodge against an incoming melee hit (the mob's typo
- *  retaliation today; real mob-melee reuses this later). Consumes state.rng for dodge, so
- *  results are seed-deterministic. Returns 0 when the hit is dodged. */
-export function meleeMitigatedDamage(state: GameState, raw: number): number {
+/** Apply the player's defense mitigation and roll their dodge against an incoming mob
+ *  hit. `kind` is carried as data for a future magicDefense split — both kinds mitigate
+ *  through the single `defense` attribute today. Consumes state.rng for the dodge roll,
+ *  so results are seed-deterministic. Returns 0 when the hit is dodged. */
+export function mitigatePlayerDamage(
+  state: GameState, raw: number, _kind: 'physical' | 'magical' = 'physical',
+): number {
   if (raw <= 0) return 0;
   const attrs = playerAttributes(state.player);
   if (rand(state) * 100 < attrs.dodge) return 0; // dodged
@@ -96,19 +100,17 @@ export function resolveKeystroke(state: GameState, ch: string): void {
     c.aoe = Math.min(c.aoe + AOE_GROWTH_PER_CHAR, AOE_MAX); // correct char grows the ring
     const dmg = typingDamage(p);
     const pp = playerWorldPos(p);
-    // Damage EVERY mob inside the ring (not just aggroed ones); a hit pulls the mob
-    // and its pack (they start walking in). Snapshot first so killMob's splice is safe.
+    // Attack EVERY mob inside the ring (not just aggroed ones). damageMob itself
+    // aggro-pulls the victim + pack (aggro ← damage attempt, the single rule).
+    // Snapshot first so killMob's splice is safe.
     const targets = state.mobs.filter((m) => dist(m.pos, pp) <= c.aoe);
-    for (const m of targets) {
-      if (m.state !== 'aggro') aggroMob(state, m);
-      damageMob(state, m, dmg);
-    }
+    for (const m of targets) damageMob(state, m, dmg);
     // Streak (ult charge) builds only while a target is in range; empty range resets it.
     c.streak = targets.length > 0 ? c.streak + 1 : 0;
     if (state.combat && c.typed >= c.prompt.length) completePrompt(state, aggroed(state));
   } else {
     c.aoe = Math.max(c.aoe * (1 - AOE_DROP_ON_MISS), AOE_MIN); // a miss shrinks the ring
-    typo(state, aggroed(state));
+    typo(state);
   }
 }
 
@@ -131,26 +133,93 @@ function completePrompt(state: GameState, ag: Mob[]): void {
   newPrompt(state);
 }
 
-function typo(state: GameState, ag: Mob[]): void {
+/** A typo deals no damage "out of nowhere" — instead it TRIGGERS the on-miss special
+ *  of every mob that is targeting the player AND has them inside its own attackRange.
+ *  Each triggered mob schedules its blow after a small jitter (lands in mobAttackStep)
+ *  and starts its per-mob cooldown, which is what absorbs typo spam (decision 2026-07-19). */
+function typo(state: GameState): void {
   const c = state.combat!;
   c.streak = 0;
   c.errorFlash = 0.3;
-  let raw = 0;
+  const pp = playerWorldPos(state.player);
   let shieldedBoss = false;
-  for (const m of ag) {
-    const def = MOBS[m.defId];
-    let d = def.typoDamage;
-    if (def.boss && m.hp <= def.hp * BOSS_ENRAGE_HP) d = Math.round(d * BOSS_ENRAGE_TYPO_MULT);
-    if (d > raw) raw = d; // the hardest engaged mob punishes the typo
+  for (const m of state.mobs) {
+    if (m.state !== 'aggro' || m.target !== 'player') continue;
     if (m.shield) shieldedBoss = true;
+    const def = MOBS[m.defId];
+    if (!def.onMiss) continue;
+    if (m.onMissCd > 0 || m.pendingOnMiss !== null) continue; // cooldown absorbs spam
+    if (dist(m.pos, pp) > def.attackRange) continue;          // out of ITS reach → no punishment
+    m.pendingOnMiss = MOB_ONMISS_JITTER_MIN
+      + mobPhase(m.id, state.tick) * (MOB_ONMISS_JITTER_MAX - MOB_ONMISS_JITTER_MIN);
+    m.onMissCd = def.onMiss.cooldown;
   }
-  hurtPlayer(state, meleeMitigatedDamage(state, raw)); // defense/dodge soften the hit
   if (shieldedBoss && state.combat) newPrompt(state); // flawless phase restarts
 }
 
+/** Mob offense, ticked every frame independent of typing: scheduled on-miss specials
+ *  land after their jitter, and periodic physical/magical channels blow while the
+ *  target sits inside the mob's attackRange. ALL damage flows through hurtPlayer
+ *  (the one choke point — godmode + deterministic RNG). */
+export function mobAttackStep(state: GameState, dt: number): void {
+  const p = state.player;
+  if (p.dead) {
+    // Death cancels every scheduled attack — no post-respawn ghost volleys.
+    for (const m of state.mobs) m.pendingOnMiss = null;
+    return;
+  }
+  const pp = playerWorldPos(p);
+  for (const m of state.mobs) {
+    if (m.onMissCd > 0) m.onMissCd = Math.max(0, m.onMissCd - dt);
+    if (m.state !== 'aggro' || m.target !== 'player') { m.pendingOnMiss = null; continue; }
+    const def = MOBS[m.defId];
+    if (m.pendingOnMiss !== null) {
+      m.pendingOnMiss -= dt;
+      if (m.pendingOnMiss <= 0) {
+        m.pendingOnMiss = null;
+        if (def.onMiss) {
+          let raw = def.onMiss.damage;
+          if (def.boss && m.hp <= def.hp * BOSS_ENRAGE_HP) raw = Math.round(raw * BOSS_ENRAGE_TYPO_MULT);
+          hurtPlayer(state, mitigatePlayerDamage(state, raw, def.onMiss.kind));
+        }
+      }
+    }
+    if (!def.attacks || dist(m.pos, pp) > def.attackRange) continue; // channels tick only in range
+    const phys = def.attacks.physical;
+    if (phys) {
+      m.physT -= dt;
+      if (m.physT <= 0) {
+        m.physT += phys.period;
+        hurtPlayer(state, mitigatePlayerDamage(state, phys.damage, 'physical'));
+      }
+    }
+    const mag = def.attacks.magical;
+    if (mag) {
+      m.magT -= dt;
+      if (m.magT <= 0) {
+        m.magT += mag.period;
+        hurtPlayer(state, mitigatePlayerDamage(state, mag.damage, 'magical'));
+      }
+    }
+  }
+}
+
 export function damageMob(state: GameState, m: Mob, dmg: number): void {
+  // aggro ← damage ATTEMPT: the mob (and its pack) turns on you even when the hit
+  // is then shield-blocked or dodged. The only other aggro source is the proximity
+  // check in mobStep (aggressive mobs). Decision 2026-07-19.
+  if (m.state !== 'aggro') aggroMob(state, m);
   if (m.shield) return;
   const def = MOBS[m.defId];
+  // Mob-side mitigation of the player's hit: dodge% shows a floating "block" and
+  // deals nothing; percentage defense softens what lands (same K-formula as the
+  // player's). rand() is consumed ONLY for mobs that actually have dodge, so
+  // zero-dodge fights keep the pre-rework RNG stream.
+  if (def.dodge && rand(state) * 100 < def.dodge) {
+    state.fx.push({ kind: 'block', pos: { ...m.pos } });
+    return;
+  }
+  if (def.defense) dmg = Math.max(1, Math.round(dmg * DEFENSE_K / (DEFENSE_K + def.defense)));
   m.hp -= dmg;
   state.fx.push({ kind: 'dmg', pos: { ...m.pos }, value: dmg });
   if (m.hp <= 0) { killMob(state, m); return; }
@@ -195,7 +264,7 @@ export function grantXp(state: GameState, amount: number): void {
 export function hurtPlayer(state: GameState, dmg: number): void {
   const p = state.player;
   // The single player-damage choke point. godmode guarded HERE (not at the call site) so the
-  // rng-consuming meleeMitigatedDamage argument still advances state.rng identically on/off —
+  // rng-consuming mitigatePlayerDamage argument still advances state.rng identically on/off —
   // keeping loot rolls seed-deterministic.
   if (p.dead || dmg <= 0 || p.godmode) return;
   p.hp -= dmg;
@@ -204,7 +273,11 @@ export function hurtPlayer(state: GameState, dmg: number): void {
     p.hp = 0;
     p.dead = true;
     state.combat = null;
-    for (const m of state.mobs) if (m.state === 'aggro') m.state = 'leash';
+    for (const m of state.mobs) {
+      if (m.state === 'aggro') m.state = 'leash';
+      m.target = null;
+      m.pendingOnMiss = null; // death cancels scheduled attacks — no post-respawn volleys
+    }
     state.fx.push({ kind: 'death' });
   }
 }
@@ -225,9 +298,6 @@ export function tryUltimate(state: GameState): void {
   // Every ult id currently resolves to the Whirlwind effect; per-class
   // effects switch on classOf(p).ult.id here when the other classes land.
   const targets = state.mobs.filter((m) => dist(m.pos, pp) <= r);
-  for (const m of targets) {
-    if (m.state !== 'aggro') aggroMob(state, m);
-    damageMob(state, m, ULT_DAMAGE);
-  }
+  for (const m of targets) damageMob(state, m, ULT_DAMAGE); // damageMob aggro-pulls
   state.fx.push({ kind: 'ult', pos: { ...pp }, radius: r });
 }

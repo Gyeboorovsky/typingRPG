@@ -6,7 +6,7 @@ import { classOf } from './classes';
 import {
   DROP_DESPAWN_SECONDS, DROP_REARM_MARGIN, GOLD_PER_COIN, MAX_LEVEL, PICKUP_RADIUS, PLAYER_RADIUS, XP_CURVE,
 } from './constants';
-import { exitFight, resolveKeystroke, stepCombatRing, syncCombat, tryUltimate } from './combat';
+import { exitFight, mobAttackStep, resolveKeystroke, stepCombatRing, syncCombat, tryUltimate } from './combat';
 import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize, rectFree } from './items';
 import { circleBlocked, isBlocked, SPAWN } from './map';
 import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
@@ -56,6 +56,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
     state.combat.errorFlash = Math.max(0, state.combat.errorFlash - dt);
   stepPlayer(state, dt);
   mobStep(state, dt);
+  mobAttackStep(state, dt); // mob offense: periodic channels + landing on-miss specials
   respawnStep(state, dt);
   stepDrops(state, dt);
   syncCombat(state);
