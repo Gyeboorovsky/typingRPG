@@ -3,7 +3,4 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 *.local
-
-# Orchestration layer — local agent-coordination files, never commit
-orchestration/
-.claude/skills/gp/
+.claude/worktrees/
