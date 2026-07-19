@@ -33,6 +33,7 @@ no touch combat (deliberate, not a regression vs the ~360px responsive promise).
 - `docs/open/` — one file per isolated change: open questions → decisions → prompts.
 - `docs/vision/` — long-range proposals (NOT decisions, NOT authorization).
 - `docs/done.md` — one line per finished piece of work.
+- `docs/bugs.md` — known bugs (add on report, delete on verified fix).
 - `docs/cheats.md` — dev cheat-code system reference.
 
 ## Workflow (docs-driven) — follow this exactly
