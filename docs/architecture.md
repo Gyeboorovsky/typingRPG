@@ -30,20 +30,25 @@ Root `src/`:
   never preventDefaults.
 
 `src/game/` (pure sim): `types.ts` (all shared shapes), `constants.ts` (ALL gameplay
-tuning), `sim.ts` (tick/reducer `update()`: events, movement, inventory/equip, cheats,
-save serialization + migration), `combat.ts` (per-keystroke combat: AoE ring,
-aggro-on-hit, boss, ultimate), `attributes.ts` (stat derivation, memoized
-`playerAttributes`, stat-point progression), `classes.ts` (four-class registry),
-`mobs.ts` (defs, exp-spot clusters, aggro/chase/leash AI, respawns), `map.ts` (static
-48×48 authored map + queries), `items.ts` (item catalog + inventory-grid helpers),
-`loot.ts` (seeded drop rolls), `rng.ts` (mulberry32 over state), `words.ts` (per-tier
-word pools + prompt generation), `game.test.ts` (130 pure vitest cases).
+tuning), `sim.ts` (tick/reducer `update()`: events, movement, portals/teleport,
+inventory/equip, cheats, save serialization + migration), `combat.ts` (per-keystroke
+combat: attack ring, aggro, mob offense, boss, ultimate), `attributes.ts` (stat
+derivation, memoized `playerAttributes`, stat-point progression), `classes.ts`
+(four-class registry), `mobs.ts` (mob registry + aggro/chase/leash AI, respawns —
+spot lists live on each map), `map.ts` (**maps as data**: `MapDef`
+{terrain/blocked/props/spawn/spots/portals}, `MAPS` registry — the authored 48×48
+meadow + the generated 152×152 Elderwood — and map-explicit queries), `items.ts`
+(item catalog + inventory-grid helpers), `loot.ts` (seeded drop rolls), `rng.ts`
+(mulberry32 over state), `words.ts` (per-tier word pools + prompt generation),
+`game.test.ts` (pure vitest suite incl. per-map flood-fill reachability).
 
 `src/render/` (Canvas 2D only, programmatic vector shapes, no asset files):
-`renderer.ts` (isometric projection/culling/depth-sort, AoE + Esc rings, particles),
-`sprites.ts` (shape defs incl. per-class player + mobs + dummy), `terrain.ts`
-(offscreen pre-rendered ground, DPR-capped), `palette.ts` (ALL world-render colors —
-never hardcode a color outside it; UI colors are CSS vars in `style.css`).
+`renderer.ts` (isometric projection/culling/depth-sort, AoE/Esc/portal-channel
+rings, particles, camera snap on map switch), `sprites.ts` (shape defs incl.
+per-class player, all mobs, portal swirl, shrooms), `terrain.ts` (**chunked** ground
+cache: 24-tile chunks rendered lazily on first visibility, LRU-capped — ground cost
+independent of map size), `palette.ts` (ALL world-render colors — never hardcode a
+color outside it; UI colors are CSS vars in `style.css`).
 
 `src/ui/` (DOM HUD only, no game logic): `hud.ts` (bars, prompt + Chill/Warning/Combat
 tag, boss bar, toasts, inventory grid with drag + click-to-carry, character window,
@@ -88,12 +93,14 @@ shadows, fonts, control-bar sizing).
 
 ### Target
 
-- Combat rework will reshape CombatState/Mob (targets, mob.target, attackRange,
-  attackShape, per-weapon ring) — under decision in `docs/open/combat-*.md`.
 - Reserved `ItemDef` fields feed the future +0→+9 upgrading/crafting
   (`docs/vision/progression.md`).
+- Maps: a Tiled-import pipeline / editor and elevation remain future work
+  (`docs/vision/maps-and-rendering.md`) — `MapDef` + chunked terrain already cover
+  the "instanced maps + big-map rendering" half of that memo.
 - Multiplayer needs `ZoneState`/actor-tagged events/per-player combat & RNG streams
-  (`docs/vision/multiplayer-architecture.md` §2.2) — deliberately NOT built yet.
+  (`docs/vision/multiplayer-architecture.md` §2.2) — deliberately NOT built yet
+  (per-visit mob repopulation on teleport is the single-player stand-in for zones).
 
 ## Combat (behavior summary)
 

@@ -295,6 +295,39 @@ exit-reset + exitFight→Alt+X. Stage C: targeting system (lands together with t
 bow). Stage D: weapon styles (bow first). Skill slots after. Ult: minimal
 keep-it-compiling patch only (temporary, per-class rebuild later).
 
+## Second map & portals — experiment, all decisions delegated (2026-07-19)
+
+User mandate: "build a much bigger second map with a portal behind the boss; decide
+everything yourself; I'll review live and revert if I dislike it." Delegated
+decisions taken (revertible as one commit):
+
+- **Maps are data:** `MapDef` (terrain/blocked grids, props, spawn, spots, portals)
+  in `src/game/map.ts`; `GameState.mapId` + `SaveData.mapId` (optional — old saves
+  land on the meadow). Map queries are map-explicit (no hidden current-map global).
+- **Map 1 "Whispering Meadow"** = the original 48×48, feature-identical. **Map 2
+  "The Elderwood"** = 152×152 (~10× the area), generated deterministically at load
+  (fixed local seed, never touches game RNG): moss clearings joined by tree-walled
+  corridors, a sinus river with three sand bridges, a lake, and the Rootfather's
+  basin at the far north. A flood-fill unit test guarantees every spot/portal is
+  reachable from spawn on every map.
+- **Portals:** walk-up, 3 s channel (`PORTAL_CHANNEL_SECONDS`), leaving the 1.3-tile
+  radius cancels; completing teleports, exits any fight (meters reset), and
+  REPOPULATES the destination map (visits are ephemeral — only player + mapId
+  persist; a future server owns zones instead). The meadow portal sits BEHIND
+  Typhon's arena, inside his aggro radius — a guarded portal, by design. Arrivals
+  land beside the twin portal (outside its trigger) so you never bounce straight
+  back.
+- **Death respawns at the CURRENT map's spawn** (each map has a safe glade).
+- **New mobs** (Elderwood natives, reuse the Stage-A damage model): Elderwood Wolf
+  (fast pack melee), Sporeling (docile, pull-only), Thornspitter (ranged magical),
+  Gnarled Treant (armored tank), **The Rootfather** (tier-4 boss, shield phases like
+  Typhon). New materials: wolf_pelt, spore_dust, ancient_bark, rootfather_heart.
+- **Chunked terrain rendering** (`src/render/terrain.ts`): the ground pre-render is
+  split into 24-tile chunks built lazily on first visibility, LRU-capped at 16 —
+  ground cost is now independent of map size (measured ~1.4 ms/frame on the 152×152
+  map). Portal swirl + teal channel arc around the player; camera snaps on map
+  switch.
+
 ## Still open / deferred (everything else combat-related is decided above)
 
 - Sword mode-set design (4 slots, one behavior today), wand & grimoire specifics,

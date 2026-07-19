@@ -1,19 +1,19 @@
 // Isometric world renderer: projection, culling, depth sort, camera,
 // the streak radius ring, and floating damage numbers / bursts.
 import { currentRing } from '../game/combat';
-import { BOSS_ENRAGE_HP, CAMERA_LERP, TILE_H, TILE_W } from '../game/constants';
+import { BOSS_ENRAGE_HP, CAMERA_LERP, PORTAL_CHANNEL_SECONDS, TILE_H, TILE_W } from '../game/constants';
 import { ITEMS } from '../game/items';
-import { PROPS } from '../game/map';
+import { mapOf } from '../game/map';
 import { MOBS } from '../game/mobs';
-import type { Fx, GameState, GroundDrop, Mob, Vec2 } from '../game/types';
+import type { Fx, GameState, GroundDrop, Mob, PortalDef, Vec2 } from '../game/types';
 import { lerp, playerWorldPos } from '../game/types';
 import { PAL } from './palette';
 import {
-  drawBoar, drawBoss, drawCultist, drawDrop, drawDummy, drawPlayer, drawRock, drawSlime, drawTree,
-  drawWaterShimmer,
+  drawBoar, drawBoss, drawCultist, drawDrop, drawDummy, drawPlayer, drawPortal, drawRock,
+  drawRootfather, drawShroom, drawSlime, drawSporeling, drawThornspitter, drawTreant, drawTree,
+  drawWaterShimmer, drawWolf,
 } from './sprites';
-import { buildTerrain } from './terrain';
-import type { TerrainLayer } from './terrain';
+import { ChunkedTerrain } from './terrain';
 
 const IX = TILE_W / 2, IY = TILE_H / 2; // 32, 16
 const SQ2 = Math.SQRT2;
@@ -25,8 +25,8 @@ interface Particle { wx: number; wy: number; text: string; color: string; born: 
 interface Burst { wx: number; wy: number; r: number; color: string; born: number }
 // Depth-sort entry: plain data + a kind tag (drawn via switch), no per-frame closures.
 interface Ent {
-  d: number; kind: 'tree' | 'rock' | 'drop' | 'mob' | 'player';
-  sx: number; sy: number; ref: GroundDrop | Mob | null;
+  d: number; kind: 'tree' | 'rock' | 'shroom' | 'portal' | 'drop' | 'mob' | 'player';
+  sx: number; sy: number; ref: GroundDrop | Mob | PortalDef | null;
 }
 
 const projX = (wx: number, wy: number): number => (wx - wy) * IX;
@@ -37,7 +37,8 @@ export class Renderer {
   private camInit = false;
   private particles: Particle[] = [];
   private bursts: Burst[] = [];
-  private terrain: TerrainLayer | null = null; // static ground, built lazily
+  private terrain: ChunkedTerrain | null = null; // chunked ground cache, built lazily
+  private terrainMapId = '';                     // rebuild trigger on map switch
   private ents: Ent[] = []; // reused across frames (cleared, not reallocated)
 
   constructor(private ctx: CanvasRenderingContext2D) {}
@@ -48,6 +49,10 @@ export class Renderer {
   draw(state: GameState, fx: Fx[], t: number, viewW: number, viewH: number, escHoldProgress = 0): void {
     const ctx = this.ctx;
     const pp = playerWorldPos(state.player);
+    const map = mapOf(state);
+
+    // A map switch (teleport) snaps the camera instead of gliding across the world.
+    if (this.terrainMapId !== state.mapId) this.camInit = false;
 
     // camera follows the player
     const tx = projX(pp.x, pp.y) - viewW / 2;
@@ -61,15 +66,16 @@ export class Renderer {
 
     ctx.clearRect(0, 0, viewW, viewH);
 
-    // ground pass: one blit of the pre-rendered terrain layer, then the
-    // animated water shimmer on top. Rebuild only if devicePixelRatio changed
-    // (browser zoom / monitor move) — the layer is map-sized, not view-sized.
-    if (!this.terrain || this.terrain.builtForDpr !== (window.devicePixelRatio || 1))
-      this.terrain = buildTerrain();
-    const ter = this.terrain;
-    ctx.drawImage(ter.canvas, 0, 0, ter.canvas.width, ter.canvas.height,
-      -ter.ox - cx, -ter.oy - cy, ter.w, ter.h);
-    for (const wt of ter.waterTiles) {
+    // ground pass: blit the visible chunks of the per-map terrain cache, then the
+    // animated water shimmer on top. Rebuilt on map switch or devicePixelRatio
+    // change (browser zoom / monitor move).
+    if (!this.terrain || this.terrainMapId !== state.mapId
+        || this.terrain.builtForDpr !== (window.devicePixelRatio || 1)) {
+      this.terrain = new ChunkedTerrain(map);
+      this.terrainMapId = state.mapId;
+    }
+    this.terrain.draw(ctx, cx, cy, viewW, viewH);
+    for (const wt of this.terrain.waterTiles) {
       const sx = projX(wt.x, wt.y) - cx, sy = projY(wt.x, wt.y) - cy;
       if (sx < -TILE_W || sx > viewW + TILE_W || sy < -TILE_H * 2 || sy > viewH + TILE_H * 2) continue;
       drawWaterShimmer(ctx, sx, sy, wt.x, wt.y, t);
@@ -111,10 +117,15 @@ export class Renderer {
     // order is identical to the old closure-based pass.
     const ents = this.ents;
     ents.length = 0;
-    for (const pr of PROPS) {
+    for (const pr of map.props) {
       const sx = projX(pr.x, pr.y) - cx, sy = projY(pr.x, pr.y) - cy;
       if (sx < -80 || sx > viewW + 80 || sy < -100 || sy > viewH + 100) continue;
       ents.push({ d: pr.x + pr.y, kind: pr.kind, sx, sy, ref: null });
+    }
+    for (const por of map.portals) {
+      const sx = projX(por.pos.x, por.pos.y) - cx, sy = projY(por.pos.x, por.pos.y) - cy;
+      if (sx < -80 || sx > viewW + 80 || sy < -100 || sy > viewH + 100) continue;
+      ents.push({ d: por.pos.x + por.pos.y, kind: 'portal', sx, sy, ref: por });
     }
     for (const dr of state.drops) {
       const sx = projX(dr.pos.x, dr.pos.y) - cx, sy = projY(dr.pos.x, dr.pos.y) - cy;
@@ -133,6 +144,8 @@ export class Renderer {
       switch (e.kind) {
         case 'tree': drawTree(ctx, e.sx, e.sy); break;
         case 'rock': drawRock(ctx, e.sx, e.sy); break;
+        case 'shroom': drawShroom(ctx, e.sx, e.sy); break;
+        case 'portal': drawPortal(ctx, e.sx, e.sy, t); break;
         case 'drop': {
           const dr = e.ref as GroundDrop;
           drawDrop(ctx, e.sx, e.sy, t, ITEMS[dr.defId].tier, dr.id);
@@ -141,10 +154,15 @@ export class Renderer {
         case 'mob': {
           const m = e.ref as Mob;
           const def = MOBS[m.defId];
-          if (def.boss) drawBoss(ctx, e.sx, e.sy, t, m.hp <= def.hp * BOSS_ENRAGE_HP, m.shield);
+          if (m.defId === 'rootfather') drawRootfather(ctx, e.sx, e.sy, t, m.hp <= def.hp * BOSS_ENRAGE_HP, m.shield);
+          else if (def.boss) drawBoss(ctx, e.sx, e.sy, t, m.hp <= def.hp * BOSS_ENRAGE_HP, m.shield);
           else if (m.defId === 'dummy') drawDummy(ctx, e.sx, e.sy, t, m.id);
           else if (m.defId === 'slime') drawSlime(ctx, e.sx, e.sy, t, m.id);
           else if (m.defId === 'boar') drawBoar(ctx, e.sx, e.sy, t, m.id);
+          else if (m.defId === 'wolf') drawWolf(ctx, e.sx, e.sy, t, m.id);
+          else if (m.defId === 'sporeling') drawSporeling(ctx, e.sx, e.sy, t, m.id);
+          else if (m.defId === 'thornspitter') drawThornspitter(ctx, e.sx, e.sy, t, m.id);
+          else if (m.defId === 'treant') drawTreant(ctx, e.sx, e.sy, t, m.id);
           else drawCultist(ctx, e.sx, e.sy, t, m.id);
           if (m.hp < def.hp) this.mobBar(e.sx, e.sy - (def.boss ? 80 : 40), m.hp / def.hp);
           break;
@@ -153,6 +171,26 @@ export class Renderer {
           drawPlayer(ctx, e.sx, e.sy, t, p.dir, state.held.length > 0, p.animT, p.dead, p.classId);
           break;
       }
+    }
+
+    // Portal channel: a teal arc filling around the player while standing on a
+    // portal (same visual language as the Esc hold-to-exit ring, other color).
+    if (state.portalChannel && !p.dead) {
+      const frac = Math.min(1, state.portalChannel.t / PORTAL_CHANNEL_SECONDS);
+      const sx = projX(pp.x, pp.y) - cx, sy = projY(pp.x, pp.y) - cy;
+      const start = -Math.PI / 2;
+      ctx.strokeStyle = PAL.portal;
+      ctx.lineWidth = 3;
+      ctx.globalAlpha = 0.22;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, ESC_RING_RX * 1.4, ESC_RING_RY * 1.4, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 0.95;
+      ctx.beginPath();
+      ctx.ellipse(sx, sy, ESC_RING_RX * 1.4, ESC_RING_RY * 1.4, 0, start, start + frac * Math.PI * 2);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+      ctx.lineWidth = 1;
     }
 
     // Esc hold-to-exit ring: fills red clockwise from the top as the hold builds. Drawn OVER the
@@ -193,6 +231,7 @@ export class Renderer {
       else if (f.kind === 'hurt') this.particles.push({ wx: pp.x, wy: pp.y, text: `-${f.value}`, color: PAL.hurtText, born: t });
       else if (f.kind === 'xp') this.particles.push({ wx: f.pos.x, wy: f.pos.y, text: `+${f.value} XP`, color: PAL.xpText, born: t });
       else if (f.kind === 'ult') this.bursts.push({ wx: f.pos.x, wy: f.pos.y, r: f.radius, color: PAL.burst, born: t });
+      else if (f.kind === 'teleport') this.bursts.push({ wx: f.pos.x, wy: f.pos.y, r: 2.2, color: PAL.portal, born: t });
       else if (f.kind === 'shieldbreak') {
         this.bursts.push({ wx: f.pos.x, wy: f.pos.y, r: 2.5, color: PAL.shieldBurst, born: t });
         this.particles.push({ wx: f.pos.x, wy: f.pos.y, text: 'SHIELD DOWN!', color: PAL.shieldBurst, born: t });

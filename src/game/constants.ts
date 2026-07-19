@@ -100,6 +100,11 @@ export const MOB_RADIUS = 0.35;       // collision radius vs blocked tiles
 export const DROP_DESPAWN_SECONDS = 60;
 export const PICKUP_RADIUS = 0.75;
 
+// portals / maps
+export const PORTAL_CHANNEL_SECONDS = 3;  // stand on a portal this long to teleport
+export const PORTAL_TRIGGER_RADIUS = 1.3; // tiles — inside starts/keeps the channel, outside cancels
+export const DEFAULT_MAP_ID = 'meadow';   // starter map (old saves without mapId land here)
+
 // inventory / currency
 export const INV_W = 10;                 // grid columns
 export const INV_PAGE_H = 6;             // visible rows per bag page

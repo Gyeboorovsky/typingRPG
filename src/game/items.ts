@@ -23,6 +23,11 @@ export const ITEMS: Record<string, ItemDef> = {
   dark_shard:    { id: 'dark_shard', name: 'Dark Shard', icon: '🔮', kind: 'material', tier: 3, maxStack: 99 },
   rune_cloth:    { id: 'rune_cloth', name: 'Rune Cloth', icon: '🧵', kind: 'material', tier: 3, maxStack: 99 },
   typhon_horn:   { id: 'typhon_horn', name: "Typhon's Horn", icon: '📯', kind: 'material', tier: 4, maxStack: 99 },
+  // Elderwood materials (map 2)
+  wolf_pelt:        { id: 'wolf_pelt', name: 'Wolf Pelt', icon: '🐾', kind: 'material', tier: 2, maxStack: 99 },
+  spore_dust:       { id: 'spore_dust', name: 'Spore Dust', icon: '🍄', kind: 'material', tier: 1, maxStack: 99 },
+  ancient_bark:     { id: 'ancient_bark', name: 'Ancient Bark', icon: '🪵', kind: 'material', tier: 3, maxStack: 99 },
+  rootfather_heart: { id: 'rootfather_heart', name: "The Rootfather's Heart", icon: '💚', kind: 'material', tier: 4, maxStack: 99 },
 
   // --- weapons: sword ---
   iron_sword: {

@@ -1,11 +1,13 @@
-// Mob definitions, Metin2-style exp-spot clusters, and the chase AI.
-// No pathfinding: the map is authored open, so straight-line + axis slide works.
+// Mob definitions and the chase AI. Exp-spot clusters live on each MapDef
+// (game/map.ts) — this module only reads the current map's spots.
+// No pathfinding: maps are authored open, so straight-line + axis slide works.
 import {
   BOSS_RESPAWN_SECONDS, LEASH_DIST, MOB_RADIUS, MOB_SEPARATION, MOB_STOP_DIST,
   PACK_LINK_RADIUS, RANGED_APPROACH_MARGIN, RESPAWN_MIN_PLAYER_DIST, RESPAWN_SECONDS,
 } from './constants';
-import { circleBlocked, findFreeNear } from './map';
-import type { GameState, Mob, MobDef, SpawnSpot, Vec2 } from './types';
+import { circleBlocked, findFreeNear, mapOf } from './map';
+import type { MapDef } from './map';
+import type { GameState, Mob, MobDef, Vec2 } from './types';
 import { dist, playerWorldPos } from './types';
 
 export const MOBS: Record<string, MobDef> = {
@@ -112,23 +114,87 @@ export const MOBS: Record<string, MobDef> = {
       { itemId: 'dark_shard', chance: 1, min: 3, max: 3 },
     ],
   },
+
+  // --- Elderwood natives (map 2) ---
+  // Fast, fragile pack hunter — bites often, dodges a bit.
+  wolf: {
+    id: 'wolf', name: 'Elderwood Wolf', tier: 2, hp: 30, xp: 22,
+    speed: 3.0, aggroRadius: 5,
+    attackRange: 1.1,
+    attacks: { physical: { damage: 3, period: 1.6 } },
+    onMiss: { damage: 5, kind: 'physical', cooldown: 1.0 },
+    dodge: 6,
+    drops: [
+      { itemId: 'wolf_pelt', chance: 0.5, min: 1, max: 1 },
+      { itemId: 'leather_scrap', chance: 0.3, min: 1, max: 1 },
+      { itemId: 'copper_coin', chance: 0.3, min: 1, max: 2 },
+      { itemId: 'hp_potion', chance: 0.06, min: 1, max: 1 },
+      { itemId: 'swift_greaves', chance: 0.03, min: 1, max: 1 },
+    ],
+  },
+  // Docile mushroom-folk — never starts a fight, sulks with spores when hit.
+  sporeling: {
+    id: 'sporeling', name: 'Sporeling', tier: 1, hp: 18, xp: 8,
+    speed: 1.2, aggroRadius: 2.5, aggressive: false,
+    attackRange: 1.1,
+    attacks: { physical: { damage: 2, period: 3.0 } },
+    onMiss: { damage: 3, kind: 'magical', cooldown: 1.5 },
+    drops: [
+      { itemId: 'spore_dust', chance: 0.6, min: 1, max: 2 },
+      { itemId: 'slime_gel', chance: 0.2, min: 1, max: 1 },
+    ],
+  },
+  // Ranged thorn-lobber: holds the edge of its long attack range like the archer.
+  thornspitter: {
+    id: 'thornspitter', name: 'Thornspitter', tier: 3, hp: 55, xp: 70,
+    speed: 1.8, aggroRadius: 5.5,
+    attackRange: 6,
+    attacks: { magical: { damage: 6, period: 3.2 } },
+    onMiss: { damage: 9, kind: 'magical', cooldown: 1.4 },
+    dodge: 4,
+    drops: [
+      { itemId: 'ancient_bark', chance: 0.4, min: 1, max: 1 },
+      { itemId: 'dark_shard', chance: 0.15, min: 1, max: 1 },
+      { itemId: 'oak_staff', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'apprentice_wand', chance: 0.04, min: 1, max: 1 },
+    ],
+  },
+  // Slow bark tank — heavy blows, heavy armor; the wall you type through.
+  treant: {
+    id: 'treant', name: 'Gnarled Treant', tier: 3, hp: 140, xp: 110,
+    speed: 1.1, aggroRadius: 4,
+    attackRange: 1.6,
+    attacks: { physical: { damage: 9, period: 3.5 } },
+    onMiss: { damage: 12, kind: 'physical', cooldown: 1.8 },
+    defense: 25,
+    drops: [
+      { itemId: 'ancient_bark', chance: 0.8, min: 1, max: 2 },
+      { itemId: 'rune_cloth', chance: 0.25, min: 1, max: 1 },
+      { itemId: 'iron_mail', chance: 0.04, min: 1, max: 1 },
+      { itemId: 'oak_staff', chance: 0.03, min: 1, max: 1 },
+    ],
+  },
+  // The Elderwood's boss: shield phases like Typhon, hits in two elements.
+  rootfather: {
+    id: 'rootfather', name: 'The Rootfather', tier: 4, hp: 550, xp: 800,
+    speed: 1.4, aggroRadius: 7, boss: true,
+    attackRange: 2.0,
+    attacks: { physical: { damage: 10, period: 2.2 }, magical: { damage: 14, period: 4.5 } },
+    onMiss: { damage: 18, kind: 'magical', cooldown: 1.0 },
+    defense: 15, dodge: 3,
+    drops: [
+      { itemId: 'rootfather_heart', chance: 1, min: 1, max: 1 },
+      { itemId: 'forbidden_grimoire', chance: 1, min: 1, max: 1 },
+      { itemId: 'ancient_bark', chance: 1, min: 4, max: 4 },
+      { itemId: 'dragon_plate', chance: 0.5, min: 1, max: 1 },
+    ],
+  },
 };
 
-export const SPOTS: SpawnSpot[] = [
-  { defId: 'dummy', center: { x: 20, y: 37 }, count: 2, radius: 1.5 }, // training dummies by the spawn plaza
-  { defId: 'slime', center: { x: 15, y: 33 }, count: 5, radius: 2.5 },
-  { defId: 'slime', center: { x: 31, y: 33 }, count: 5, radius: 2.5 },
-  { defId: 'slime', center: { x: 23, y: 27 }, count: 5, radius: 2.5 },
-  { defId: 'boar', center: { x: 11, y: 20 }, count: 4, radius: 2.5 },
-  { defId: 'boar', center: { x: 36, y: 21 }, count: 4, radius: 2.5 },
-  { defId: 'archer', center: { x: 34, y: 15 }, count: 3, radius: 2.5 },
-  { defId: 'cultist', center: { x: 24, y: 13 }, count: 4, radius: 2.5 },
-  { defId: 'typhon', center: { x: 24, y: 5 }, count: 1, radius: 0.5 },
-];
-
 export function spawnMob(state: GameState, spotIdx: number): void {
-  const spot = SPOTS[spotIdx];
-  const pos = findFreeNear(state, spot.center, spot.radius);
+  const map = mapOf(state);
+  const spot = map.spots[spotIdx];
+  const pos = findFreeNear(state, map, spot.center, spot.radius);
   state.mobs.push({
     id: state.nextId++, defId: spot.defId, pos: { ...pos }, hp: MOBS[spot.defId].hp,
     state: 'idle', spotIdx, home: { ...pos }, shield: false, shieldsUsed: 0,
@@ -145,7 +211,7 @@ export function mobPhase(id: number, salt = 0): number {
 }
 
 export function initMobs(state: GameState): void {
-  SPOTS.forEach((s, i) => { for (let k = 0; k < s.count; k++) spawnMob(state, i); });
+  mapOf(state).spots.forEach((s, i) => { for (let k = 0; k < s.count; k++) spawnMob(state, i); });
 }
 
 /** Aggro a mob and pack-link its nearby spot-mates (chain pull, Metin2-style).
@@ -171,6 +237,7 @@ export function aggroMob(state: GameState, m: Mob): void {
 
 export function mobStep(state: GameState, dt: number): void {
   const pp = playerWorldPos(state.player);
+  const map = mapOf(state);
   for (const m of state.mobs) {
     const def = MOBS[m.defId];
     if (m.state === 'idle') {
@@ -184,25 +251,25 @@ export function mobStep(state: GameState, dt: number): void {
       // Ranged mobs hold position just inside their own attack range; melee
       // attackRanges fall below MOB_STOP_DIST so they close in as before.
       const stopAt = Math.max(MOB_STOP_DIST, def.attackRange - RANGED_APPROACH_MARGIN);
-      if (dist(m.pos, pp) > stopAt) moveToward(m, pp, def.speed * dt);
+      if (dist(m.pos, pp) > stopAt) moveToward(map, m, pp, def.speed * dt);
     } else { // leash: run home, heal, forget (including boss phase state)
       if (dist(m.pos, m.home) < 0.15) {
         m.state = 'idle'; m.hp = def.hp; m.pos = { ...m.home };
         m.shield = false; m.shieldsUsed = 0;
-      } else moveToward(m, m.home, def.speed * 1.5 * dt);
+      } else moveToward(map, m, m.home, def.speed * 1.5 * dt);
     }
   }
-  separate(state.mobs);
+  separate(map, state.mobs);
 }
 
-function moveToward(m: Mob, target: Vec2, step: number): void {
+function moveToward(map: MapDef, m: Mob, target: Vec2, step: number): void {
   const dx = target.x - m.pos.x, dy = target.y - m.pos.y;
   const len = Math.hypot(dx, dy);
   if (len < 1e-6) return;
   const nx = m.pos.x + (dx / len) * step;
   const ny = m.pos.y + (dy / len) * step;
-  if (!circleBlocked(nx, m.pos.y, MOB_RADIUS)) m.pos.x = nx; // axis-separated slide
-  if (!circleBlocked(m.pos.x, ny, MOB_RADIUS)) m.pos.y = ny;
+  if (!circleBlocked(map, nx, m.pos.y, MOB_RADIUS)) m.pos.x = nx; // axis-separated slide
+  if (!circleBlocked(map, m.pos.x, ny, MOB_RADIUS)) m.pos.y = ny;
 }
 
 /** Soft pairwise push so packs don't collapse into one point.
@@ -210,7 +277,7 @@ function moveToward(m: Mob, target: Vec2, step: number): void {
  *  exit keeps the constant small). If MMO-scale zones raise mob counts,
  *  replace the broad phase with a coarse spatial hash (~1-tile buckets
  *  rebuilt per tick, comparing neighboring buckets only). */
-function separate(mobs: Mob[]): void {
+function separate(map: MapDef, mobs: Mob[]): void {
   const minSq = MOB_SEPARATION * MOB_SEPARATION;
   for (let i = 0; i < mobs.length; i++) {
     for (let j = i + 1; j < mobs.length; j++) {
@@ -222,8 +289,8 @@ function separate(mobs: Mob[]): void {
       const push = (MOB_SEPARATION - d) / 2 / d;
       const ax = a.pos.x - dx * push, ay = a.pos.y - dy * push;
       const bx = b.pos.x + dx * push, by = b.pos.y + dy * push;
-      if (!circleBlocked(ax, ay, MOB_RADIUS)) { a.pos.x = ax; a.pos.y = ay; }
-      if (!circleBlocked(bx, by, MOB_RADIUS)) { b.pos.x = bx; b.pos.y = by; }
+      if (!circleBlocked(map, ax, ay, MOB_RADIUS)) { a.pos.x = ax; a.pos.y = ay; }
+      if (!circleBlocked(map, bx, by, MOB_RADIUS)) { b.pos.x = bx; b.pos.y = by; }
     }
   }
 }
@@ -231,10 +298,11 @@ function separate(mobs: Mob[]): void {
 /** Tick spot respawn timers; hold the respawn while the player camps the spot. */
 export function respawnStep(state: GameState, dt: number): void {
   const pp = playerWorldPos(state.player);
+  const spots = mapOf(state).spots;
   state.spots.forEach((spot, i) => {
     for (let k = spot.pending.length - 1; k >= 0; k--) {
       spot.pending[k] -= dt;
-      if (spot.pending[k] <= 0 && dist(SPOTS[i].center, pp) > RESPAWN_MIN_PLAYER_DIST) {
+      if (spot.pending[k] <= 0 && dist(spots[i].center, pp) > RESPAWN_MIN_PLAYER_DIST) {
         spot.pending.splice(k, 1);
         spawnMob(state, i);
       }

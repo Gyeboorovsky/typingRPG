@@ -11,12 +11,13 @@ import {
 } from './combat';
 import {
   BOSS_ENRAGE_TYPO_MULT, DROP_REARM_MARGIN, GOLD_PER_COIN, INV_H, INV_PAGE_H, INV_W,
-  MAX_LEVEL, MOVE_PER_POINT, PICKUP_RADIUS, PLAYER_SPEED, PROMPT_HP_REWARD_PER_TIER, PROMPT_MP_REWARD,
+  MAX_LEVEL, MOVE_PER_POINT, PICKUP_RADIUS, PLAYER_SPEED, PORTAL_CHANNEL_SECONDS,
+  PROMPT_HP_REWARD_PER_TIER, PROMPT_MP_REWARD,
   RING_DEFAULT, SIM_DT, STREAK_IDLE_DECAY_DELAY, STREAK_IDLE_DECAY_PER_SEC, XP_CURVE,
 } from './constants';
 import { addToInventory, firstFreeCell, ITEMS, rectFree } from './items';
 import { rollDrops } from './loot';
-import { isBlocked } from './map';
+import { isBlocked, MAPS } from './map';
 import { MOBS } from './mobs';
 import { EQUIP_SLOTS } from './types';
 import { rand } from './rng';
@@ -302,10 +303,114 @@ describe('movement and map', () => {
   });
 
   it('map blocks borders and water, spawn area is free', () => {
-    expect(isBlocked(0, 0)).toBe(true); // border forest
-    expect(isBlocked(5, 30)).toBe(true); // lake
-    expect(isBlocked(24, 39)).toBe(false); // spawn
-    expect(isBlocked(-1, 5)).toBe(true); // out of bounds
+    const m = MAPS.meadow;
+    expect(isBlocked(m, 0, 0)).toBe(true); // border forest
+    expect(isBlocked(m, 5, 30)).toBe(true); // lake
+    expect(isBlocked(m, 24, 39)).toBe(false); // spawn
+    expect(isBlocked(m, -1, 5)).toBe(true); // out of bounds
+  });
+});
+
+describe('maps & portals (multi-map)', () => {
+  const flood = (m: typeof MAPS.meadow): Uint8Array => {
+    // BFS over unblocked tiles from the map's spawn — the reachability oracle.
+    const seen = new Uint8Array(m.w * m.h);
+    const q: number[] = [Math.round(m.spawn.y) * m.w + Math.round(m.spawn.x)];
+    seen[q[0]] = 1;
+    while (q.length) {
+      const i = q.pop()!;
+      const x = i % m.w, y = (i / m.w) | 0;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= m.w || ny >= m.h) continue;
+        const ni = ny * m.w + nx;
+        if (seen[ni] || m.blocked[ni]) continue;
+        seen[ni] = 1;
+        q.push(ni);
+      }
+    }
+    return seen;
+  };
+
+  it('every map: spawn free, every spot center and portal reachable from spawn', () => {
+    for (const m of Object.values(MAPS)) {
+      expect(isBlocked(m, Math.round(m.spawn.x), Math.round(m.spawn.y)), `${m.id} spawn`).toBe(false);
+      const seen = flood(m);
+      for (const s of m.spots)
+        expect(seen[Math.round(s.center.y) * m.w + Math.round(s.center.x)], `${m.id} spot ${s.defId}@${s.center.x},${s.center.y}`).toBe(1);
+      for (const p of m.portals) {
+        expect(seen[Math.round(p.pos.y) * m.w + Math.round(p.pos.x)], `${m.id} portal ${p.name}`).toBe(1);
+        const target = MAPS[p.target.mapId];
+        expect(target, `${m.id} portal target map`).toBeDefined();
+        expect(isBlocked(target, Math.round(p.target.pos.x), Math.round(p.target.pos.y)), `${m.id} portal arrival`).toBe(false);
+      }
+    }
+  });
+
+  it('the elderwood is ~10x the meadow and its spot mobs exist', () => {
+    const area = (m: typeof MAPS.meadow): number => m.w * m.h;
+    expect(area(MAPS.elderwood) / area(MAPS.meadow)).toBeGreaterThanOrEqual(10);
+    for (const s of MAPS.elderwood.spots) expect(MOBS[s.defId], s.defId).toBeDefined();
+  });
+
+  it('standing on a portal channels for PORTAL_CHANNEL_SECONDS, then teleports and repopulates', () => {
+    const s = newGame(5);
+    const portal = MAPS.meadow.portals[0];
+    s.player.pos = { ...portal.pos };
+    update(s, [], SIM_DT);
+    expect(s.portalChannel).not.toBeNull();
+    for (let i = 0; i < Math.ceil(PORTAL_CHANNEL_SECONDS / SIM_DT); i++) update(s, [], SIM_DT);
+    expect(s.mapId).toBe('elderwood');
+    expect(s.player.pos).toEqual(portal.target.pos);
+    expect(s.portalChannel).toBeNull();
+    expect(s.spots).toHaveLength(MAPS.elderwood.spots.length); // world repopulated
+    expect(s.mobs.length).toBeGreaterThan(0);
+    expect(s.mobs.some((m) => m.defId === 'wolf')).toBe(true);
+    expect(s.fx.some((f) => f.kind === 'teleport')).toBe(true);
+  });
+
+  it('stepping off the portal cancels the channel', () => {
+    const s = newGame(5);
+    const portal = MAPS.meadow.portals[0];
+    s.player.pos = { ...portal.pos };
+    for (let i = 0; i < 60; i++) update(s, [], SIM_DT); // 1s of channeling
+    expect(s.portalChannel!.t).toBeGreaterThan(0.9);
+    s.player.pos = { x: portal.pos.x + 5, y: portal.pos.y + 5 };
+    update(s, [], SIM_DT);
+    expect(s.portalChannel).toBeNull();
+    expect(s.mapId).toBe('meadow');
+  });
+
+  it('teleporting mid-fight exits the fight and resets the in-combat meters', () => {
+    const s = newGame(5);
+    s.mobs = [];
+    const portal = MAPS.meadow.portals[0];
+    s.player.pos = { ...portal.pos };
+    update(s, [{ type: 'setMode', mode: 'fight' }], SIM_DT);
+    s.player.streak = 9;
+    s.player.attackRanges.unarmed = 4;
+    for (let i = 0; i < Math.ceil(PORTAL_CHANNEL_SECONDS / SIM_DT) + 2; i++) update(s, [], SIM_DT);
+    expect(s.mapId).toBe('elderwood');
+    expect(s.mode).toBe('travel');
+    expect(s.player.streak).toBe(0);
+    expect(s.player.attackRanges).toEqual({});
+  });
+
+  it('mapId round-trips through the save; unknown mapId falls back to the meadow', () => {
+    const s = newGame(5);
+    s.mapId = 'elderwood';
+    s.player.pos = { ...MAPS.elderwood.spawn };
+    const save = makeSave(s);
+    expect(save.mapId).toBe('elderwood');
+    const fresh = newGame(1);
+    applySave(fresh, JSON.parse(JSON.stringify(save)) as SaveData);
+    expect(fresh.mapId).toBe('elderwood');
+    expect(fresh.spots).toHaveLength(MAPS.elderwood.spots.length);
+    expect(fresh.mobs.some((m) => m.defId === 'treant')).toBe(true);
+    const bad = { ...makeSave(s), mapId: 'no-such-map' };
+    const fresh2 = newGame(1);
+    applySave(fresh2, JSON.parse(JSON.stringify(bad)) as SaveData);
+    expect(fresh2.mapId).toBe('meadow');
   });
 });
 

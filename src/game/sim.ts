@@ -4,33 +4,73 @@ import { emptyStats, maxHp, maxMp, moveSpeed, recomputeStatPoints, statPointsEar
 import type { StatId } from './attributes';
 import { classOf } from './classes';
 import {
-  DROP_DESPAWN_SECONDS, DROP_REARM_MARGIN, GOLD_PER_COIN, MAX_LEVEL, PICKUP_RADIUS, PLAYER_RADIUS, XP_CURVE,
+  DEFAULT_MAP_ID, DROP_DESPAWN_SECONDS, DROP_REARM_MARGIN, GOLD_PER_COIN, MAX_LEVEL,
+  PICKUP_RADIUS, PLAYER_RADIUS, PORTAL_CHANNEL_SECONDS, PORTAL_TRIGGER_RADIUS, XP_CURVE,
 } from './constants';
 import { exitFight, mobAttackStep, resolveKeystroke, stepCombatMeters, syncCombat, tryUltimate } from './combat';
 import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize, rectFree } from './items';
-import { circleBlocked, isBlocked, SPAWN } from './map';
-import { initMobs, mobStep, respawnStep, SPOTS } from './mobs';
+import { circleBlocked, isBlocked, mapOf, MAPS } from './map';
+import { initMobs, mobStep, respawnStep } from './mobs';
 import type { CheatCode, ClassId, EquipSlot, GameState, InputEvent, ItemStack, SaveData } from './types';
 import { DIR_VECS, dist, playerWorldPos } from './types';
 
 export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior'): GameState {
   const state: GameState = {
     tick: 0, rng: seed | 0,
+    mapId: DEFAULT_MAP_ID, portalChannel: null,
     player: {
-      name, classId, pos: { ...SPAWN }, dir: 0,
+      name, classId, pos: { ...MAPS[DEFAULT_MAP_ID].spawn }, dir: 0,
       hp: 0, mp: 0, level: 1, xp: 0, stats: emptyStats(), statPoints: 0,
       equipment: emptyEquipment(), gold: 0, leech: 1,
       inventory: [], overflow: [], invRev: 0,
       dead: false, godmode: false, ultCooldown: 0, animT: 0,
       streak: 0, typingIdle: 0, attackRanges: {},
     },
-    mobs: [], drops: [], spots: SPOTS.map(() => ({ pending: [] })),
+    mobs: [], drops: [], spots: MAPS[DEFAULT_MAP_ID].spots.map(() => ({ pending: [] })),
     combat: null, mode: 'travel', fireMode: 1, travelUnlocked: false, held: [], fx: [], bossKilled: false, dirty: false, nextId: 1,
   };
   state.player.hp = maxHp(state.player);
   state.player.mp = maxMp(state.player);
   initMobs(state);
   return state;
+}
+
+/** Rebuild the CURRENT map's world state (mobs, drops, respawn timers) from its
+ *  spots. Runs on map entry (teleport) and on load — visits are ephemeral, only
+ *  the player + mapId persist (single-player model; a server would own zones). */
+function resetWorld(state: GameState): void {
+  state.mobs = [];
+  state.drops = [];
+  state.spots = mapOf(state).spots.map(() => ({ pending: [] }));
+  initMobs(state);
+}
+
+/** Stand on a portal → the channel fills; step off → it cancels; full → teleport.
+ *  Channeling is allowed mid-fight (a guarded escape is the point of the meadow
+ *  portal), but the teleport itself exits the fight (meters reset). */
+function stepPortals(state: GameState, dt: number): void {
+  const p = state.player;
+  if (p.dead) { state.portalChannel = null; return; }
+  const portals = mapOf(state).portals;
+  const idx = portals.findIndex((por) => dist(p.pos, por.pos) <= PORTAL_TRIGGER_RADIUS);
+  if (idx < 0) { state.portalChannel = null; return; }
+  if (!state.portalChannel || state.portalChannel.portalIdx !== idx)
+    state.portalChannel = { portalIdx: idx, t: 0 };
+  state.portalChannel.t += dt;
+  if (state.portalChannel.t >= PORTAL_CHANNEL_SECONDS) teleport(state, idx);
+}
+
+function teleport(state: GameState, portalIdx: number): void {
+  const portal = mapOf(state).portals[portalIdx];
+  const target = MAPS[portal.target.mapId];
+  if (!target) { state.portalChannel = null; return; } // config error — fail safe
+  if (state.mode === 'fight') exitFight(state);        // leaving a fight resets meters
+  state.mapId = target.id;
+  state.player.pos = { ...portal.target.pos };
+  state.portalChannel = null;
+  resetWorld(state);
+  state.fx.push({ kind: 'teleport', pos: { ...portal.target.pos }, mapName: target.name });
+  state.dirty = true;
 }
 
 export function update(state: GameState, events: InputEvent[], dt: number): void {
@@ -59,6 +99,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
   mobStep(state, dt);
   mobAttackStep(state, dt); // mob offense: periodic channels + landing on-miss specials
   respawnStep(state, dt);
+  stepPortals(state, dt);   // walk-up teleporters (3s channel)
   stepDrops(state, dt);
   syncCombat(state);
   stepCombatMeters(state, dt); // ring + streak dynamics, after syncCombat has ensured combat exists
@@ -88,9 +129,10 @@ function stepPlayer(state: GameState, dt: number): void {
   vx /= len; vy /= len;
   p.dir = state.held[state.held.length - 1];
   const step = moveSpeed(p) * dt;
+  const map = mapOf(state);
   const nx = p.pos.x + vx * step, ny = p.pos.y + vy * step;
-  if (!circleBlocked(nx, p.pos.y, PLAYER_RADIUS)) p.pos.x = nx; // axis-separated slide
-  if (!circleBlocked(p.pos.x, ny, PLAYER_RADIUS)) p.pos.y = ny;
+  if (!circleBlocked(map, nx, p.pos.y, PLAYER_RADIUS)) p.pos.x = nx; // axis-separated slide
+  if (!circleBlocked(map, p.pos.x, ny, PLAYER_RADIUS)) p.pos.y = ny;
   p.animT += dt;
   state.dirty = true; // position is part of the save
 }
@@ -277,7 +319,7 @@ function respawnPlayer(state: GameState): void {
   const p = state.player;
   if (!p.dead) return;
   p.dead = false;
-  p.pos = { ...SPAWN };
+  p.pos = { ...mapOf(state).spawn }; // each map has its own safe spawn glade
   p.hp = maxHp(p);
   p.mp = maxMp(p);
 }
@@ -287,6 +329,7 @@ export function makeSave(state: GameState): SaveData {
   const p = state.player;
   return {
     v: 2, savedAt: '',
+    mapId: state.mapId,
     player: {
       name: p.name, classId: p.classId, level: p.level, xp: p.xp, hp: p.hp, mp: p.mp,
       pos: { ...p.pos }, inventory: p.inventory.map((s) => ({ ...s })),
@@ -305,8 +348,12 @@ export function applySave(state: GameState, save: SaveData): void {
   p.classId = save.player.classId;
   p.level = Math.max(1, save.player.level);
   p.xp = Math.max(0, save.player.xp);
+  // Map first (pos validation depends on it): unknown/absent ids → the starter map.
+  state.mapId = save.mapId && MAPS[save.mapId] ? save.mapId : DEFAULT_MAP_ID;
+  state.portalChannel = null;
+  const map = mapOf(state);
   const pos = save.player.pos;
-  p.pos = isBlocked(Math.round(pos.x), Math.round(pos.y)) ? { ...SPAWN } : { ...pos };
+  p.pos = isBlocked(map, Math.round(pos.x), Math.round(pos.y)) ? { ...map.spawn } : { ...pos };
   p.stats = save.player.stats ? { ...save.player.stats } : emptyStats();
   p.statPoints = save.player.statPoints ?? 0;
   p.leech = 1; // transient — always re-init full on load (never persisted)
@@ -342,4 +389,7 @@ export function applySave(state: GameState, save: SaveData): void {
   p.mp = Math.min(Math.max(0, save.player.mp), maxMp(p));
   p.invRev++;
   state.bossKilled = save.bossKilled;
+  // Rebuild the world for the loaded map (newGame pre-spawned the starter map's mobs;
+  // a save from another map needs that map's population instead).
+  resetWorld(state);
 }

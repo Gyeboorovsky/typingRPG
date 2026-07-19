@@ -1,45 +1,89 @@
-// The static ground pre-rendered once to an offscreen canvas. The map never
-// changes at runtime (authored at module load in game/map.ts), so the per-frame
-// ground pass — 48×48 tiles of path/fill/stroke — collapses to one drawImage
-// blit; only the animated water shimmer stays vector per frame (renderer.ts).
+// Static ground rendering, chunked: the map is split into CHUNK_TILES-square
+// chunks, each pre-rendered to its own offscreen canvas the first time it
+// scrolls into view (then LRU-cached). This is what lets a 152x152 map cost the
+// same per frame as the old 48x48 single-canvas approach — the ground pass is
+// a handful of drawImage blits regardless of map size.
 // World colors still come exclusively from palette.ts via drawTileBase.
 import { TILE_H, TILE_W } from '../game/constants';
-import { MAP_H, MAP_W, T_WATER, terrainAt } from '../game/map';
+import { T_WATER, terrainAt } from '../game/map';
+import type { MapDef } from '../game/map';
 import { drawTileBase } from './sprites';
 
 const IX = TILE_W / 2, IY = TILE_H / 2; // 32, 16
+const CHUNK_TILES = 24;   // chunk edge in tiles (48-map → 2x2 chunks, 152-map → 7x7)
+const MAX_CHUNKS = 16;    // LRU cap — ~10 MB/chunk at dpr 2 keeps worst case bounded
 
-export interface TerrainLayer {
+interface Chunk {
   canvas: HTMLCanvasElement;
-  builtForDpr: number;    // raw devicePixelRatio at build time (rebuild trigger)
-  ox: number; oy: number; // world-origin offset inside the canvas, logical px
-  w: number; h: number;   // logical size, px
-  waterTiles: { x: number; y: number }[]; // tiles that get the per-frame shimmer
+  sx: number; sy: number; // world-screen position of the canvas' top-left, logical px
+  w: number; h: number;   // logical size
 }
 
-export function buildTerrain(): TerrainLayer {
-  // Isometric extents: projX spans ±MAP_H·IX around 0 (plus a half-tile each
-  // side), projY spans 0..(MAP_W+MAP_H-2)·IY (plus a half-tile each side).
-  const w = (MAP_W + MAP_H) * IX;
-  const h = (MAP_W + MAP_H) * IY;
-  const ox = MAP_H * IX;   // tile (0, MAP_H-1)'s left vertex lands at canvas x=0
-  const oy = TILE_H / 2;   // tile (0, 0)'s top vertex lands at canvas y=0
-  const rawDpr = window.devicePixelRatio || 1;
-  // Cap the backing-store scale so w·h·dpr² stays under mobile canvas limits
-  // (~16.7M px on iOS Safari). Flat-color diamonds upscale imperceptibly.
-  const dpr = Math.min(rawDpr, 2, Math.sqrt(16_000_000 / (w * h)));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  const ctx = canvas.getContext('2d')!;
-  ctx.scale(dpr, dpr);
-  ctx.translate(ox, oy);
-  const waterTiles: { x: number; y: number }[] = [];
-  for (let y = 0; y < MAP_H; y++)
-    for (let x = 0; x < MAP_W; x++) {
-      const terrain = terrainAt(x, y);
-      drawTileBase(ctx, (x - y) * IX, (x + y) * IY, terrain, x, y);
-      if (terrain === T_WATER) waterTiles.push({ x, y });
+export class ChunkedTerrain {
+  readonly waterTiles: { x: number; y: number }[] = [];
+  readonly builtForDpr: number;
+  private readonly dpr: number;
+  private chunks = new Map<number, Chunk>(); // insertion order = LRU order
+  private readonly nx: number;
+  private readonly ny: number;
+
+  constructor(private map: MapDef) {
+    this.builtForDpr = window.devicePixelRatio || 1;
+    this.dpr = Math.min(this.builtForDpr, 2); // flat diamonds upscale imperceptibly
+    this.nx = Math.ceil(map.w / CHUNK_TILES);
+    this.ny = Math.ceil(map.h / CHUNK_TILES);
+    for (let y = 0; y < map.h; y++)
+      for (let x = 0; x < map.w; x++)
+        if (terrainAt(map, x, y) === T_WATER) this.waterTiles.push({ x, y });
+  }
+
+  /** Blit every chunk overlapping the view, building missing ones lazily. */
+  draw(ctx: CanvasRenderingContext2D, camX: number, camY: number, viewW: number, viewH: number): void {
+    for (let cj = 0; cj < this.ny; cj++)
+      for (let ci = 0; ci < this.nx; ci++) {
+        const b = this.bounds(ci, cj);
+        const sx = b.sxMin - camX, sy = b.syMin - camY;
+        if (sx > viewW || sy > viewH || sx + b.w < 0 || sy + b.h < 0) continue;
+        const chunk = this.ensure(ci, cj, b);
+        ctx.drawImage(chunk.canvas, 0, 0, chunk.canvas.width, chunk.canvas.height, sx, sy, chunk.w, chunk.h);
+      }
+  }
+
+  /** Screen-space bounds of a chunk's tile diamonds (iso projection). */
+  private bounds(ci: number, cj: number) {
+    const x0 = ci * CHUNK_TILES, y0 = cj * CHUNK_TILES;
+    const x1 = Math.min(x0 + CHUNK_TILES, this.map.w) - 1;
+    const y1 = Math.min(y0 + CHUNK_TILES, this.map.h) - 1;
+    const sxMin = (x0 - y1) * IX - IX;
+    const sxMax = (x1 - y0) * IX + IX;
+    const syMin = (x0 + y0) * IY - IY;
+    const syMax = (x1 + y1) * IY + IY;
+    return { x0, y0, x1, y1, sxMin, syMin, w: sxMax - sxMin, h: syMax - syMin };
+  }
+
+  private ensure(ci: number, cj: number, b: ReturnType<ChunkedTerrain['bounds']>): Chunk {
+    const key = cj * this.nx + ci;
+    const hit = this.chunks.get(key);
+    if (hit) { // LRU touch: re-insert at the tail
+      this.chunks.delete(key);
+      this.chunks.set(key, hit);
+      return hit;
     }
-  return { canvas, builtForDpr: rawDpr, ox, oy, w, h, waterTiles };
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(b.w * this.dpr);
+    canvas.height = Math.round(b.h * this.dpr);
+    const cctx = canvas.getContext('2d')!;
+    cctx.scale(this.dpr, this.dpr);
+    cctx.translate(-b.sxMin, -b.syMin);
+    for (let y = b.y0; y <= b.y1; y++)
+      for (let x = b.x0; x <= b.x1; x++)
+        drawTileBase(cctx, (x - y) * IX, (x + y) * IY, terrainAt(this.map, x, y), x, y);
+    const chunk: Chunk = { canvas, sx: b.sxMin, sy: b.syMin, w: b.w, h: b.h };
+    if (this.chunks.size >= MAX_CHUNKS) { // evict the least-recently-used
+      const oldest = this.chunks.keys().next().value as number;
+      this.chunks.delete(oldest);
+    }
+    this.chunks.set(key, chunk);
+    return chunk;
+  }
 }

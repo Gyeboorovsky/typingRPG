@@ -297,6 +297,7 @@ export class Hud {
     for (const f of fx) {
       if (f.kind === 'pickup') this.toast(f.text);
       else if (f.kind === 'levelup') this.toast(`⭐ Level ${f.level}!`);
+      else if (f.kind === 'teleport') this.toast(`🌀 ${f.mapName}`);
     }
   }
 

@@ -13,6 +13,12 @@ feature file: `[ ]` todo → `[I]` implemented → `[V]` user-verified.
 
 ## Active
 
+0. **Second map + portals (experiment)** — `[I]` implemented 2026-07-19, awaiting the
+   user's live review/`[V]` (or a revert — built as one commit on purpose). The
+   Elderwood (152×152, 5 new mobs, Rootfather boss), walk-up portals with a 3 s
+   channel, chunked terrain rendering. Decisions (all delegated) recorded in
+   `docs/decisions.md` → "Second map & portals".
+
 1. **Combat rework** — `in-progress` — `docs/open/combat-rework-scope.md`.
    ALL questions answered 2026-07-19; decisions locked in `docs/decisions.md`.
    **Stage A (mob damage model + aggro) and Stage B (ring + streak + exit-reset)

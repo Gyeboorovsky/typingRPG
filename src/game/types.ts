@@ -104,6 +104,11 @@ export interface Mob {
 export interface SpawnSpot { defId: string; center: Vec2; count: number; radius: number }
 export interface SpotState { pending: number[] } // respawn countdowns in seconds
 
+// A walk-up teleporter: standing within its trigger radius channels a progress
+// bar (PORTAL_CHANNEL_SECONDS); leaving cancels; completing teleports to the
+// target map/pos and re-initializes that map's mobs/drops.
+export interface PortalDef { pos: Vec2; target: { mapId: string; pos: Vec2 }; name: string }
+
 export interface Player {
   name: string;
   classId: ClassId;
@@ -144,6 +149,7 @@ export interface CombatState {
 export type Fx =
   | { kind: 'dmg'; pos: Vec2; value: number }        // damage dealt to a mob
   | { kind: 'block'; pos: Vec2 }                     // mob dodged/blocked the player's hit (shows where dmg numbers do)
+  | { kind: 'teleport'; pos: Vec2; mapName: string } // portal fired: burst at the arrival pos + a map-name toast
   | { kind: 'hurt'; pos: Vec2; value: number }       // damage taken by player
   | { kind: 'xp'; pos: Vec2; value: number }
   | { kind: 'ult'; pos: Vec2; radius: number }
@@ -181,6 +187,10 @@ export interface GroundDrop { id: number; defId: string; qty: number; pos: Vec2;
 export interface GameState {
   tick: number;
   rng: number; // PRNG state — all randomness flows through this
+  mapId: string; // which MapDef the player is on (persisted; mobs/drops are per-visit)
+  // Live portal channel: standing on a portal fills t toward PORTAL_CHANNEL_SECONDS;
+  // stepping out clears it. Transient (not saved).
+  portalChannel: { portalIdx: number; t: number } | null;
   player: Player;
   mobs: Mob[];
   drops: GroundDrop[];
@@ -199,6 +209,7 @@ export interface GameState {
 export interface SaveData {
   v: 1 | 2;
   savedAt: string;
+  mapId?: string; // absent in old saves → the starter map
   player: {
     name: string; classId: ClassId; level: number; xp: number; hp: number; mp: number;
     pos: Vec2;
