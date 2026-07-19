@@ -3,7 +3,7 @@
 **Status:** planning (questions open)
 **Part of:** combat rework — this file is the entry point; the sibling files are
 [combat-aggro-targeting.md](combat-aggro-targeting.md),
-[combat-ring-range.md](combat-ring-range.md),
+combat-ring-range (fully answered 2026-07-19 — decisions in `docs/decisions.md`),
 [combat-streak.md](combat-streak.md),
 [combat-damage-dot.md](combat-damage-dot.md),
 [combat-mob-attacks.md](combat-mob-attacks.md),

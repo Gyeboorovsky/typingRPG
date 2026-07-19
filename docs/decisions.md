@@ -151,9 +151,11 @@ From the user's answers to `docs/open/combat-aggro-targeting.md`:
   (coming later) need an indicator showing who the skill would hit — even with a
   sword equipped.
 - **Bow target selection: automatic — nearest at acquisition — then PINNED until the
-  target dies.** Manual switching via two rebindable combat actions (switch target
-  left / right); defaults pending a keybind-conflict question (Alt+Q currently =
-  exitFight). NO mouse click-override.
+  target dies.** Manual switching via two rebindable combat actions: **switch target
+  left = Alt+Q, switch target right = Alt+E** (defaults). To free Alt+Q, the
+  **`exitFight` default moves to Alt+X** (decided 2026-07-19; code change lands with
+  the targeting stage). NO mouse click-override. Left/right semantics: open question
+  in `combat-aggro-targeting.md`.
 - **Target recomputation is event-driven only** (target death, target left range,
   mode/weapon change, manual switch) — never per-frame; implementation kept
   configurable/open to future modification (design delegated to Claude Code, user
@@ -165,6 +167,31 @@ From the user's answers to `docs/open/combat-aggro-targeting.md`:
   constant; passives plug in later in that one place.
 - **Candidate ordering:** each mode defines a sort function; take the first
   `maxTargets` (design delegated to Claude Code, user approved).
+
+From the user's answers to `combat-ring-range.md` (all 9 answered 2026-07-19 — file
+removed):
+
+- **One range model for every weapon:** per-weapon `attackRange` (replaces "aoe"
+  naming) with config rates `growth` / `decay` / `dropOnMiss`. The bow is simply a
+  weapon with zero rates (static range) — no branching in code.
+- **The ring is always drawn**; static ranges (bow) at lower alpha — configurable.
+- **Ring growth is driven by an EXTENSIBLE per-source config** (user request): a rate
+  per source, `0` = disabled — e.g. `onHit` (correct char that actually hit someone),
+  `onCorrectType` (any correct char), `whileMoving`, `whileStationary`, … so any
+  future idea is a config entry, not a code change. **Defaults: only `onHit` > 0** —
+  typing into the air does not pump the ring, and skill-slot letters never do by
+  default.
+- **Idle decay:** starts after ~2.5–3 s without typing (not the originally planned
+  1 s), then a slow decay — tuning constants.
+- **Typo cuts the ring by 25%** as a starting value — flagged for live re-tuning:
+  combined with the new on-miss volley model the total punishment may be too harsh,
+  and the user explicitly does not want it too severe.
+- **The ring survives clearing a pack** (subject only to decay) — you enter the next
+  pack with earned range.
+- **`attackRange` lives OUTSIDE the `combat` object** — per-weapon state on the
+  player — so it survives leaving fight mode; only its own decay applies.
+- **Weapon switch keeps per-weapon ranges:** each weapon retains its own
+  `attackRange`, decaying in the background while unequipped; no reset on switch.
 
 ## Areas under re-decision (do not treat the above as final there)
 

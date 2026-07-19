@@ -56,7 +56,7 @@ defense — no damage, but zero penalty). Never use the word "miss" for both.
 
 ### 6. Streak vs leaving fight mode
 **How I read it:** not addressed.
-**Consequence:** as with the ring ([combat-ring-range.md](combat-ring-range.md) #8) —
-if the streak lives in `combat`, it's lost on exit.
+**Consequence:** if the streak lives in `combat`, it's lost on exit. (The ring already
+got this decided 2026-07-19: `attackRange` lives on the player and survives exit.)
 **Proposal:** same as for the ring — if you choose the freeze from question 2, move
-both onto the player and treat them uniformly.
+the streak onto the player too and treat both uniformly.

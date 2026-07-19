@@ -27,8 +27,9 @@ not absolute.
 and everything else follows from the typo model. Simpler, and it self-reconciles.
 
 ### 3. Active-slot letters vs the ring and the DoT
-**How I read it:** neutral for the streak ([combat-streak.md](combat-streak.md) #3),
-and for the ring it's the flag from [combat-ring-range.md](combat-ring-range.md) #3.
+**How I read it:** neutral for the streak ([combat-streak.md](combat-streak.md) #3);
+for the ring this is already decided (2026-07-19): growth sources are config-driven
+and skill-slot letters don't pump the ring by default.
 **Consequence:** standing in a pack typing skills does not protect you from the DoT —
 mobs keep hitting.
 **Proposal:** fine, no reservations, but worth seeing clearly: skills are not a "safe
