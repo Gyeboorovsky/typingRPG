@@ -18,10 +18,10 @@ feature file: `[ ]` todo → `[I]` implemented → `[V]` user-verified.
 ## Backlog (suggested order)
 
 1. **Combat rework** — `planning` — THE priority (per user, 2026-07-19).
-   Entry: `docs/open/combat-rework-scope.md`; questions across
-   `combat-aggro-targeting` / `combat-streak` / `combat-damage-dot` /
-   `combat-mob-attacks` / `combat-weapons-modes` / `combat-skill-slots`
-   (ring-range: fully answered 2026-07-19, decisions locked).
+   Entry: `docs/open/combat-rework-scope.md`; open questions in
+   `combat-streak` (1 conflict) / `combat-damage-dot` / `combat-mob-attacks` /
+   `combat-weapons-modes` / `combat-skill-slots` (aggro-targeting + ring-range:
+   fully answered 2026-07-19, decisions locked).
    requires: answers to the open questions before any prompt is written.
    Suggested internal order (from combat-rework-scope.md #1): bugfixes+ring →
    targeting → mob config/damage model → weapons → skill slots.

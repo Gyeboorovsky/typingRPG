@@ -1,62 +1,31 @@
 # Combat rework — streak
 
-**Status:** planning (questions open)
+**Status:** planning (1 CONFLICT question open; the other 5 answered 2026-07-19 —
+decisions in `docs/decisions.md`)
 **Part of:** combat rework — see [combat-rework-scope.md](combat-rework-scope.md) for the stage split.
-**Source:** migrated from `pytania-combat-rework.md` (2026-07-19), translated; original questions 20–25.
 
-Question format: **How I read it** → **Consequence** → **Proposal**. Answer in chat by
-number. Answered questions are removed; decisions land in `docs/decisions.md`.
+Answer in chat by number. Answered questions are removed; decisions land in
+`docs/decisions.md`.
 
 ---
 
-### 1. When does the streak grow
-**How I read it:** it grows when a correct char **attacks any mob** — even if the mob
-defends, dodges, or has too much armor. The attempt counts, not the outcome.
-**Consequence:** an important difference from Claude Code's earlier plan, which says
-"streak grows only when a mob is inside the ring". Your version is broader (an attack
-happened) and more sensible — the player isn't punished for running into a
-well-armored mob.
-**Proposal:** definition: `streak++` if and only if the char triggered at least one
-**attack attempt** on a mob (regardless of result).
-
-### 2. Streak when you're attacking nobody — reset or hold?
-**How I read it:** you said it grows only on attack. You didn't say what happens when
-there's nobody to attack. The earlier plan assumes a hard reset.
-**Consequence:** a huge difference. Reset = leaving the pack wipes your progress.
-Freeze = you can walk to the next pack and continue.
-**Proposal:** **freeze**, not reset. Keep the reset exclusively for a typo. Then you
-have a clean rule: *only a mistake breaks the streak*. Plus an optional time decay if
-you don't want it to stand forever.
-
-### 3. Active-skill letters don't touch the streak
-**How I read it:** they neither grow nor reset it — fully neutral.
-**Consequence:** consistent with the "as if the player pressed nothing" rule from our
-skill-slot spec.
-**Proposal:** fine, no reservations. Worth writing down as one rule: a char consumed by
-an active slot **does not exist** from the main combat's perspective.
-
-### 4. What is the streak even for now?
-**How I read it:** it used to drive the ring radius. Now the ring is independent of it,
-and the ultimate is to be rebuilt from scratch and you haven't thought about it.
-**Consequence:** **the streak is currently a counter with no consumer.** It displays,
-it grows, but nothing comes of it beyond an ult that doesn't exist yet.
-**Proposal:** this is the section's most important question. Either (a) you assign it a
-role now (damage multiplier? mana-cost reduction? faster regen?), or (b) you
-consciously leave it as a bare counter for the future ult and say so explicitly.
-Without that, Claude Code will guess, and tests will assert a number that affects
-nothing.
-
-### 5. Is a mob's defense (dodge / too much armor) a "miss"?
-**How I read it:** the mob defended itself, but the streak grows. So mob defense ≠
-player typo.
-**Consequence:** you need two different words, because "miss" would otherwise mean two
-things: the player's typo and a no-damage outcome due to defense.
-**Proposal:** in code: `typo` (player error — punished) and `blocked`/`evaded` (mob
-defense — no damage, but zero penalty). Never use the word "miss" for both.
-
-### 6. Streak vs leaving fight mode
-**How I read it:** not addressed.
-**Consequence:** if the streak lives in `combat`, it's lost on exit. (The ring already
-got this decided 2026-07-19: `attackRange` lives on the player and survives exit.)
-**Proposal:** same as for the ring — if you choose the freeze from question 2, move
-the streak onto the player too and treat both uniformly.
+### 1. ⚠ CONFLICT: "everything resets on fight exit" vs "the ring survives exit"
+**Context:** answering the streak questions you said: *"when I leave the fight, the
+streak, combo, range and whatever else grew during combat resets to zero."* But
+minutes earlier, in the ring file, you approved the opposite for the ring
+(answer "P8: super"): *`attackRange` lives on the player and SURVIVES leaving fight
+mode, subject only to its own decay* — plus P9 (per-weapon ranges persist across
+weapon switches). Both cannot hold. Which version wins?
+   a) **Exit resets everything** — streak AND ring/attackRange (and any future
+      in-combat meter) drop to baseline on leaving fight. Overrides P8; P9's
+      per-weapon persistence then applies only WITHIN one fight session. Simple,
+      readable rule: "leaving combat = clean slate".
+   b) **Keep P8** — the ring survives exit (with decay), only the STREAK resets on
+      exit. Preserves the "reward for keeping tempo between fights" idea; costs a
+      two-rule model (streak resets, ring persists).
+   c) Both survive exit with their own decays (streak freeze + idle decay would keep
+      running out of combat) — most continuous, least readable.
+   **Recommendation: b** — you chose the ring's persistence deliberately and twice
+   (P7 "ok", P8 "super"), and it feeds the "enter the next pack with earned range"
+   flow you liked; the streak is currently a consumer-less counter, so resetting IT
+   on exit costs nothing and keeps exit meaningful.

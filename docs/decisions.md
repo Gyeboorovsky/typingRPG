@@ -151,11 +151,14 @@ From the user's answers to `docs/open/combat-aggro-targeting.md`:
   (coming later) need an indicator showing who the skill would hit — even with a
   sword equipped.
 - **Bow target selection: automatic — nearest at acquisition — then PINNED until the
-  target dies.** Manual switching via two rebindable combat actions: **switch target
-  left = Alt+Q, switch target right = Alt+E** (defaults). To free Alt+Q, the
-  **`exitFight` default moves to Alt+X** (decided 2026-07-19; code change lands with
-  the targeting stage). NO mouse click-override. Left/right semantics: open question
-  in `combat-aggro-targeting.md`.
+  target dies.** Manual switching via FOUR rebindable combat actions (defaults):
+  **left/right = Alt+Q / Alt+E**, **up/down = Alt+R / Alt+F**. Semantics:
+  **screen-axis cyclic** — candidates sorted by screen X (Q/E) or screen Y (R/F);
+  each press steps to the neighbor along that axis, wrapping at the edges, so every
+  target is always reachable. To free Alt+Q, the **`exitFight` default moves to
+  Alt+X** (code change lands with the targeting stage). Browser Alt+E/Alt+F menu
+  shortcuts are swallowed by the existing fight-mode Alt-combo handling (same
+  mechanism as Alt+D, `ed5b911`). NO mouse click-override.
 - **Target recomputation is event-driven only** (target death, target left range,
   mode/weapon change, manual switch) — never per-frame; implementation kept
   configurable/open to future modification (design delegated to Claude Code, user
@@ -192,6 +195,40 @@ removed):
   player — so it survives leaving fight mode; only its own decay applies.
 - **Weapon switch keeps per-weapon ranges:** each weapon retains its own
   `attackRange`, decaying in the background while unequipped; no reset on switch.
+- ⚠ **"Survives leaving fight" is under a conflict question** — a later streak answer
+  ("on fight exit, everything that grew during combat resets") contradicts the
+  survive-exit bullet above; resolution pending in `docs/open/combat-streak.md`.
+
+From the user's answers to `combat-streak.md` (2026-07-19; one conflict question
+remains in that file):
+
+- **When the streak grows is a CONFIG choice:** `onAttempt` (a correct char triggered
+  at least one attack attempt — blocks/evades still count) vs `onHit` (only when
+  damage actually landed). **Default: `onAttempt`.** One config entry flips it.
+- **No target → the streak FREEZES** (it never hard-resets just because the field is
+  empty). Additionally an **idle time decay** (config: delay + rate) shrinks it when
+  nothing is typed for a while. A typo resets it to zero.
+- **Terminology + display (user's naming): `miss`** = the player typed a wrong
+  letter; **`block`** = the mob defended the attack (no damage, no penalty). `block`
+  is shown as floating text over the mob, in the same spot damage numbers appear.
+- **The streak deliberately has NO consumer for now** (user choice): a bare counter
+  awaiting a future role. The current ultimate keeps consuming it (streak ≥
+  threshold) until the planned per-class ult rebuild. Tests must not invent gameplay
+  effects for it.
+
+Skill slots — flow locked 2026-07-19 (NOT implemented yet; recorded for the future
+stage):
+
+- **Modal skill flow:** press a skill-slot key → the prompt window switches to that
+  skill's loading prompt → typing there charges the skill → pressing the slot key
+  AGAIN activates it (consumes mana; starts its cooldown if any) → the window
+  returns to the normal combat prompt.
+- **Typing in the skill window counts exactly like normal prompt typing** for
+  streak/combo and related meters. (Ring growth still follows the per-source growth
+  config — with only `onHit` enabled by default, skill typing doesn't pump the ring,
+  because it hits nobody.)
+- This **supersedes the older inline-slot model** ("a letter of a dimmed slot = a
+  typo") — those questions were dropped as obsolete.
 
 ## Areas under re-decision (do not treat the above as final there)
 
