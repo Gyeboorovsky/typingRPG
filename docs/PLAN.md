@@ -15,9 +15,10 @@ feature file: `[ ]` todo → `[I]` implemented → `[V]` user-verified.
 
 1. **Combat rework** — `in-progress` — `docs/open/combat-rework-scope.md`.
    ALL questions answered 2026-07-19; decisions locked in `docs/decisions.md`.
-   Stage A (mob damage model + aggro) and Stage B (ring + streak + exit-reset)
-   being implemented now; Stage C (targeting, with bow) and Stage D (weapon
-   styles) later.
+   **Stage A (mob damage model + aggro) and Stage B (ring + streak + exit-reset)
+   are `[I]` implemented (commits `fcd361e`, `4e97010`; 147 tests green) —
+   awaiting the user's manual `[V]` pass** (checklist in the scope file).
+   Stage C (targeting, with bow) and Stage D (weapon styles) later.
 
 ## Backlog (suggested order)
 
