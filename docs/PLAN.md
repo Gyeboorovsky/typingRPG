@@ -13,18 +13,13 @@ feature file: `[ ]` todo → `[I]` implemented → `[V]` user-verified.
 
 ## Active
 
-*(nothing — pick a Backlog item to start)*
+1. **Combat rework** — `in-progress` — `docs/open/combat-rework-scope.md`.
+   ALL questions answered 2026-07-19; decisions locked in `docs/decisions.md`.
+   Stage A (mob damage model + aggro) and Stage B (ring + streak + exit-reset)
+   being implemented now; Stage C (targeting, with bow) and Stage D (weapon
+   styles) later.
 
 ## Backlog (suggested order)
-
-1. **Combat rework** — `planning` — THE priority (per user, 2026-07-19).
-   Entry: `docs/open/combat-rework-scope.md`; open questions in
-   `combat-streak` (1 conflict) / `combat-damage-dot` / `combat-mob-attacks` /
-   `combat-weapons-modes` / `combat-skill-slots` (aggro-targeting + ring-range:
-   fully answered 2026-07-19, decisions locked).
-   requires: answers to the open questions before any prompt is written.
-   Suggested internal order (from combat-rework-scope.md #1): bugfixes+ring →
-   targeting → mob config/damage model → weapons → skill slots.
 
 2. **Security hardening** — `planning` — `docs/open/security-hardening.md`.
    requires: —

@@ -192,15 +192,18 @@ removed):
 - **The ring survives clearing a pack** (subject only to decay) — you enter the next
   pack with earned range.
 - **`attackRange` lives OUTSIDE the `combat` object** — per-weapon state on the
-  player — so it survives leaving fight mode; only its own decay applies.
-- **Weapon switch keeps per-weapon ranges:** each weapon retains its own
-  `attackRange`, decaying in the background while unequipped; no reset on switch.
-- ⚠ **"Survives leaving fight" is under a conflict question** — a later streak answer
-  ("on fight exit, everything that grew during combat resets") contradicts the
-  survive-exit bullet above; resolution pending in `docs/open/combat-streak.md`.
+  player — persisting across pack clears and weapon switches WITHIN a fight session;
+  only its own decay applies while fighting.
+- **Weapon switch keeps per-weapon ranges** (within a fight): each weapon retains its
+  own `attackRange`, decaying in the background while unequipped; no reset on switch.
+- **Explicit fight exit resets ALL in-combat meters (conflict resolved 2026-07-19):**
+  leaving fight mode — the `exitFight` action (Alt+X), the Esc hold-to-confirm, or
+  death — resets the streak, every weapon's `attackRange`, and any future
+  combat-grown meter to baseline. While you STAY in fight mode, everything persists
+  as decided above.
 
-From the user's answers to `combat-streak.md` (2026-07-19; one conflict question
-remains in that file):
+From the user's answers to `combat-streak.md` (all answered 2026-07-19 — file
+removed):
 
 - **When the streak grows is a CONFIG choice:** `onAttempt` (a correct char triggered
   at least one attack attempt — blocks/evades still count) vs `onHit` (only when
@@ -230,11 +233,75 @@ stage):
 - This **supersedes the older inline-slot model** ("a letter of a dimmed slot = a
   typo") — those questions were dropped as obsolete.
 
-## Areas under re-decision (do not treat the above as final there)
+From the user's answers to `combat-damage-dot.md` (all 13 answered 2026-07-19 — file
+removed):
 
-The combat rework (`docs/open/combat-*.md`) is re-deciding: aggro rules, targeting
-(triangles), ring semantics and placement, streak's purpose, the typo-punishment model
-(on-miss instead of self-damage), mob configs (attack range/shapes/periods), weapon
-styles and modes, skill-slot integration, and the ultimate. Until those questions are
-answered and implemented, the Combat section above describes the current baseline
-only.
+- **A typo triggers an on-miss attack from every mob that has the player inside its
+  own attack range** (not from everything aggroed). A typo in an empty field is free.
+  The abstract typo self-damage is REMOVED.
+- **Mob attack-range visualization:** faint, highly transparent rings drawn around
+  mobs showing their attack range; radius/appearance from each mob's config
+  (placeholder values fine for now).
+- **Mob timed attacks: TWO configurable periodic attacks per mob** — physical and
+  magical (period + damage each; either may be absent). The earlier "third period"
+  idea is dropped. **On-miss = a special attack** (e.g. ranged mobs fire an arrow =
+  physical, or a magic bolt) — placeholder now, refined later.
+- **Jitter** (delegated): random per-mob phase offset at aggro for periodic attacks +
+  random 50–200 ms delay on each on-miss — so volleys never land in one frame.
+- **Per-mob on-miss cooldown** (config per mob). Not tuned for perfection now — built
+  to be easy to change. Subsequent typos inside the jitter window are absorbed by the
+  cooldown (delegated).
+- **`attackRange` is independent of `aggroRadius`; ranged mobs approach only to
+  their attack range** (Metin2 archers). One pack may mix melee and ranged mobs.
+  Details delegated; refine later.
+- **Defense: percentage formula** `dmg * k/(k+def)` with a config constant
+  (delegated). **Dodge:** derived from the defense/attack relation for now, config
+  room reserved for a separate `evasion` stat; any mob may have some dodge
+  (delegated).
+- **DoT = periodic blows**, not a continuous trickle (a rare trickle mob possible
+  later).
+- **Mob attacks run in real time, independent of typing** — standing idle in a pack
+  kills you; a slow typist is genuinely punished. Deliberate.
+- **On player death, all scheduled attacks against them are cancelled** (no
+  post-respawn ghost volleys).
+- **ALL player damage flows through `hurtPlayer`** — one choke point (godmode keeps
+  working, RNG stays deterministic).
+- **Damage display: each attack shows its own floating number** (NO visual
+  aggregation for now — refine later); `block` appears as floating text in the same
+  spot.
+
+Delegated decisions adopted by Claude Code (user mandate 2026-07-19: "implement it
+as you understand it, make the remaining calls yourself" — from
+`combat-mob-attacks.md` and `combat-weapons-modes.md`, files removed):
+
+- **Explicit `mob.target` field now** (always the player in single-player) — one
+  field today, saves rewriting the damage path for multiplayer.
+- **`attackShape: 'single' | 'aoe' | 'projectileAoe'` as mob-config DATA now; only
+  `single` implemented.** No flight-time projectiles (attacks resolve instantly with
+  range); dodging = leaving range before the blow, no real-time dodge mechanics.
+  Mob target-choice rules for multiplayer NOT decided now. Aggro rules independent
+  of `attackShape` (aggro ← damage stands regardless of who a mob hits).
+- **Weapon modes:** switching modes mid-fight recomputes targets but never resets
+  ring/streak/prompt. Range config per weapon with an optional per-mode override.
+  **Sword mode-set design DEFERRED** — the sword keeps its single current behavior
+  until modes are designed. Wand/grimoire deferred; the targeting system will be
+  built hostile+friendly-capable from day one (grimoire heals need green targets).
+- **ONE targeting system for everything** — weapons, skills, healing (from
+  `combat-skill-slots.md`; skill slots themselves remain a future stage).
+
+**Stage split (adopted 2026-07-19)** — working file `docs/open/combat-rework-scope.md`:
+Stage A: mob damage model + aggro rework (first). Stage B: ring & streak dynamics +
+exit-reset + exitFight→Alt+X. Stage C: targeting system (lands together with the
+bow). Stage D: weapon styles (bow first). Skill slots after. Ult: minimal
+keep-it-compiling patch only (temporary, per-class rebuild later).
+
+## Still open / deferred (everything else combat-related is decided above)
+
+- Sword mode-set design (4 slots, one behavior today), wand & grimoire specifics,
+  and the bow's firing spec (tempo, arrows, projectile representation) — designed at
+  their stages.
+- The ultimate's per-class rebuild (current ult = temporary, minimal patches only).
+- Skill-slot stage details beyond the locked modal flow.
+- Multiplayer-only rules (mob target choice between players, AoE shapes behavior).
+- The "Combat (current locked baseline)" section above describes pre-rework code and
+  is superseded by "Combat rework" decisions as stages A–D land.
