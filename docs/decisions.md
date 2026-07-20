@@ -406,6 +406,15 @@ User's design, refined together; implementation delegated:
 - **Paintings of every current map are committed** (`paintings/<id>/`, ~670 KB
   total) as editable references; `maps:compile` SKIPS code-built ids so an export
   can't shadow its generator — fork by renaming the folder + config id.
+- **2026-07-20: the user hand-edited `paintings/meadow/` and asked to rebuild it
+  from the PNG** — a deliberate tree-wall corridor redesign (254 px) flanking the
+  arena→spawn path. Compiled directly (bypassing the CLI's shadow-guard, which
+  exists for accidental cases only). **`meadow` now loads from the compiled JSON,
+  not `buildMeadow()`** — permanent; the code builder is kept only as history/
+  fallback. The edit also buried the `boar` spot's exact tile; user chose to
+  relocate the spot marker (36,21 → 37,21) over carving a gap in the wall. Full
+  incident + recovery notes (an accidental `git checkout` briefly discarded the
+  edit, recovered from the linter's own errors.png): `docs/open/map-pipeline.md`.
 
 ## Still open / deferred (everything else combat-related is decided above)
 

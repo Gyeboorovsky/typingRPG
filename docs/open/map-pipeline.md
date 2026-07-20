@@ -53,6 +53,36 @@ New content slots in by APPENDING (never reorder): `PORTAL_INKS` / `MOB_INK_ORDE
       edit any world in Paint; code-built ids are compile-guarded against
       accidental shadowing (fork by renaming).
 
+## Incident log (learn from these before touching paintings/ again)
+
+- **2026-07-20 — meadow hand-edit, recovered from an accidental `git checkout`.**
+  User hand-painted a large tree-wall corridor into `paintings/meadow/terrain.png`
+  (254 px, both sides of the arena→spawn path — a deliberate redesign, not a
+  stray click). While fixing ~32 anti-aliased edge pixels near the new wall,
+  Claude ran `git checkout -- terrain.png` to "reset before the proper fix",
+  which silently discarded the user's uncommitted edit (checkout restores HEAD,
+  not "before my last write"). Recovered losslessly because the just-generated
+  `errors.png` (terrain + magenta-flagged bad pixels only) was still on disk —
+  reconstructing terrain.png from it and snapping the magenta pixels to grass
+  reproduced the edit exactly. **Lesson: never `git checkout`/`restore` a
+  painting to "start over" mid-fix — diff against HEAD first
+  (`git show HEAD:path | cmp -`), and if a repair script already ran, recover
+  from ITS output (e.g. errors.png), never from git.**
+- Same edit also silently blocked the `boar` spot's exact tile (36,21) — the
+  wall painted straight over the marker pixel. The linter's "unreachable"
+  message doesn't distinguish "walled off" from "buried under the wall itself";
+  when investigating, diff terrain.png against the git HEAD version to see
+  what actually changed before guessing. Resolved by relocating the marker to
+  the nearest open tile (37,21) in both `markers.png` and `config.json` — user
+  chose relocate-the-spot over carving a gap in their new wall.
+- **Meadow now loads from `src/game/maps-compiled/meadow.json`, not the code
+  builder** — this was compiled directly (bypassing the CLI's code-map skip,
+  which exists to prevent ACCIDENTAL shadowing) because the user explicitly
+  asked to rebuild meadow from the edited PNG. This is permanent: the compiled
+  JSON wins in the registry lookup. `buildMeadow()` in `src/game/map.ts` is now
+  dead code for the shipped game (kept as the historical generator / fallback
+  if the compiled file is ever deleted).
+
 ## Next (not started)
 
 - [ ] Per-entity passability RUNTIME (swim/fly speeds, flying mobs growing over
