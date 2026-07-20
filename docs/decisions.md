@@ -366,8 +366,9 @@ User's design, refined together; implementation delegated:
   Painting space is the flat top-down grid; the renderer supplies the isometric view
   (no data rotation). **PNG only** (lossless); JPG rejected (lossy re-encoding breaks
   exact color matching).
-- **Layers as separate files:** `<id>.terrain.png` + `<id>.markers.png` (black =
-  nothing; markers never destroy terrain info) + optional `<id>.regions.png`.
+- **Layers as separate files, one folder per map** — `paintings/<id>/` holding
+  `terrain.png` + `markers.png` (black = nothing; markers never destroy terrain
+  info) + optional `regions.png` + `config.json` (id must equal the folder name).
 - **Ink registry** (`src/mapkit/inks.ts`) = the global config: every current and
   future element has an exact color, namespaced by CHANNEL rules (portals R=255
   B=200 w/ G=entry index; groups B=255 w/ G=group index; structures R=255 B=0;
@@ -401,7 +402,10 @@ User's design, refined together; implementation delegated:
   from the painted PNG (ugly + marker colors ≠ game colors — a real minimap comes
   later from game data).
 - Demo map: **The Painted Cellar** (portal south of the meadow plaza) — the living
-  example of every feature; `paintings/cellar.*` are the reference files.
+  example of every feature; `paintings/cellar/` holds the reference files.
+- **Paintings of every current map are committed** (`paintings/<id>/`, ~670 KB
+  total) as editable references; `maps:compile` SKIPS code-built ids so an export
+  can't shadow its generator — fork by renaming the folder + config id.
 
 ## Still open / deferred (everything else combat-related is decided above)
 

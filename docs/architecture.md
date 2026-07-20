@@ -65,7 +65,8 @@ Access / localStorage + IndexedDB kv for the picked-file handle), `settings.ts`
 (compiler + linter on raw RGBA buffers), `export.ts` (MapDef → paintable layers),
 `format.ts` (compiled RLE JSON ↔ MapDef), `structures.ts` (stampable structure
 registry), `rle.ts`. Scripts: `maps:compile` / `maps:export` / `maps:palette`
-(vite-node + pngjs). Painted sources live in `paintings/`, compiled output in
+(vite-node + pngjs). Painted sources live in `paintings/<mapId>/` (terrain/markers/
+regions PNGs + config.json; `ink-palette.png` at the top level), compiled output in
 `src/game/maps-compiled/*.json` (auto-registered via glob). `src/game/groups.ts` —
 group compositions + the rotating-spawn runtime. `preview.html` + `src/preview.ts` —
 the map preview tool (real render modules, no sim; pan/zoom/labels).
@@ -85,21 +86,35 @@ shadows, fonts, control-bar sizing).
 
 ### Current
 
-- `GameState`: `tick, rng, player, mobs[], drops[], spots[], combat: CombatState|null,
-  mode: 'travel'|'fight', fireMode + travelUnlocked (transient), held[], fx[],
-  bossKilled, dirty, nextId`. No projectiles.
+- `GameState`: `tick, rng, mapId, portalChannel (transient), player, mobs[], drops[],
+  spots[], groupCd[] (transient — painted-map group cooldowns), combat:
+  CombatState|null, mode: 'travel'|'fight', fireMode + travelUnlocked (transient),
+  held[], fx[], bossKilled, dirty, nextId`. No projectiles.
 - `Player`: pos/dir/hp/mp/level/xp, `stats` (STR/VIT/INT/DEX) + `statPoints`,
   `equipment` (slot record), `gold`, `leech` (transient stub, unwired), positioned
-  `inventory` grid + `overflow`, `dead`, `godmode` (transient), `ultCooldown`.
-- `CombatState`: `prompt, typed, streak, tier, errorFlash, aoe` (live ring radius),
-  `idleTime`. No practice flag.
+  `inventory` grid + `overflow`, `dead`, `godmode` (transient), `ultCooldown`, and
+  the in-combat meters (all transient, reset on explicit fight exit/death):
+  `streak` (float), `typingIdle`, `attackRanges` (per-weapon live ring radii).
+- `CombatState`: `prompt, typed, tier, errorFlash` — the ring and streak live on the
+  Player (see above) so they survive pack clears and weapon switches within a fight.
 - `Mob`: id/defId/pos/hp/state (`idle|aggro|leash`)/spotIdx/home/shield fields;
-  `aggressive?: boolean` lives on **MobDef** (false = pull-only, e.g. training dummy).
+  offense state `target ('player'|null), physT, magT, onMissCd, pendingOnMiss`;
+  optional painted-group tags `groupDef/groupSite` (negative `spotIdx` marks group
+  mobs — they respawn via the group cooldown, not the spot queue).
+  `aggressive?: boolean` lives on **MobDef** (false = pull-only, e.g. training dummy);
+  MobDef also carries `attackRange`, periodic `attacks` (physical/magical), `onMiss`
+  special + cooldown, `defense`/`dodge`, and data-only `attackShape`.
 - `InputEvent` (14 variants): char, move, setMode, setFireMode, setTravelUnlocked,
   devCheat, ult, respawn, allocateStat, equip, unequip, moveItem, useItem, dropItem.
 - `ItemDef`: kind/tier/maxStack, `weapon?{dmgPerChar, range?}`, `consumable?`,
   slot/weaponType/size/reqLevel/itemLevel/reqClass/bonuses, reserved `upgradable?`,
   `upgradeMats?`, `recipe?`.
+- `MapDef` (game/map.ts): grids (`terrain`/`blocked`/optional `regions`), `props`,
+  precomputed `waterTiles`, `spawn`, classic `spots`, painted-map `groups?`
+  (sites/respawnSeconds/maxAlive), `portals`. Sources: code builders, the open-world
+  generator, or compiled painted JSON (`src/game/maps-compiled/`) — all lazy.
+- `SaveData` v2 (+ optional `mapId`; in-combat meters, groups, portal channel and
+  world population are never persisted — visits are ephemeral).
 
 ### Target
 

@@ -7,17 +7,20 @@
 
 1. `npm run maps:palette` → open `paintings/ink-palette.png` beside MS Paint and
    **eyedropper** colors from it (never type RGB by hand).
-2. Paint (1 px = 1 tile, flat top-down; the game renders it isometric):
-   - `paintings/<id>.terrain.png` — floors/water/mountains/tree walls; black = void
-     (out of map — any dungeon shape).
-   - `paintings/<id>.markers.png` (black background): ONE spawn pixel, portal pixels,
-     mob-group site pixels, structure footprints (fill a rect), fixed-spot pixels.
-   - `paintings/<id>.regions.png` (optional): safe-zone areas.
-   - `paintings/<id>.config.json`: `{ id, name, groups: { "<G>": { respawnSeconds,
+2. Paint — one folder per map, `paintings/<id>/` (1 px = 1 tile, flat top-down; the
+   game renders it isometric):
+   - `terrain.png` — floors/water/mountains/tree walls; black = void (out of map —
+     any dungeon shape).
+   - `markers.png` (black background): ONE spawn pixel, portal pixels, mob-group
+     site pixels, structure footprints (fill a rect), fixed-spot pixels.
+   - `regions.png` (optional): safe-zone areas.
+   - `config.json`: `{ id (= folder name), name, groups: { "<G>": { respawnSeconds,
      maxAlive } }, spots: { "x,y": { count, radius } } }`.
 3. `npm run maps:compile` — the LINTER reports every bad pixel with coordinates and
-   the nearest known ink, writes `<id>.errors.png` (offenders flashed magenta) and
-   fails on any error. On success → `src/game/maps-compiled/<id>.json` (RLE, hashed).
+   the nearest known ink, writes `paintings/<id>/errors.png` (offenders flashed
+   magenta) and fails on any error. On success → `src/game/maps-compiled/<id>.json`
+   (RLE, hashed). Code-built maps' folders are skipped (rename the folder + config
+   id to fork one).
 4. The game auto-registers every compiled JSON — no code changes. PNGs are working
    files only; regenerate them any time with `npm run maps:export -- <mapId>`.
 5. `preview.html` (dev: `/typingRPG/preview.html`) — the real renderer with no sim:
@@ -43,8 +46,12 @@ New content slots in by APPENDING (never reorder): `PORTAL_INKS` / `MOB_INK_ORDE
 - [I] New terrains: stone floor, mountain (blocked; fly-over reserved), void (black).
 - [I] Demo: **The Painted Cellar** (44×58 void-shaped dungeon; portal south of the
       meadow plaza) — 2 rotating groups, a golem spot, a bridged water channel,
-      a safe entrance hall. `paintings/cellar.*` are the reference example.
+      a safe entrance hall. `paintings/cellar/` is the reference example (its
+      markers.png shows a hand-painted STRUCTURE footprint — exports flatten those).
 - [I] Preview tool (`preview.html`) using the real render modules.
+- [I] Paintings exported for ALL current maps (`paintings/<id>/`, ~670 KB total) —
+      edit any world in Paint; code-built ids are compile-guarded against
+      accidental shadowing (fork by renaming).
 
 ## Next (not started)
 

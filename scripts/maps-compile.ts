@@ -1,9 +1,9 @@
-// Compile every painted map in paintings/ into src/game/maps-compiled/*.json.
+// Compile every painted map in paintings/<id>/ into src/game/maps-compiled/*.json.
 // Run: npm run maps:compile   (vite-node — shares the game's TS modules)
-// A map = <id>.terrain.png [+ <id>.markers.png] [+ <id>.regions.png] + <id>.config.json.
-// Lint errors fail the run (exit 1) and write <id>.errors.png next to the sources
-// with every offending pixel flashed magenta.
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
+// A map = one folder: paintings/<id>/{terrain.png, markers.png?, regions.png?,
+// config.json}. Lint errors fail the run (exit 1) and write errors.png into the
+// map's folder with every offending pixel flashed magenta.
+import { readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { PNG } from 'pngjs';
 import { compileMap } from '../src/mapkit/compile';
@@ -18,13 +18,14 @@ function readLayer(path: string): Layer {
   return { w: png.width, h: png.height, data: new Uint8Array(png.data) };
 }
 
-const ids = [...new Set(
-  readdirSync(PAINT_DIR)
-    .filter((f) => f.endsWith('.terrain.png'))
-    .map((f) => f.replace('.terrain.png', '')),
-)];
+const ids = readdirSync(PAINT_DIR).filter((entry) => {
+  try {
+    return statSync(join(PAINT_DIR, entry)).isDirectory()
+      && statSync(join(PAINT_DIR, entry, 'terrain.png')).isFile();
+  } catch { return false; }
+});
 if (ids.length === 0) {
-  console.log(`no *.terrain.png in ${PAINT_DIR}/ — nothing to compile`);
+  console.log(`no ${PAINT_DIR}/<id>/terrain.png found — nothing to compile`);
   process.exit(0);
 }
 const knownIds = [...CODE_MAP_IDS, ...ids];
@@ -36,13 +37,19 @@ for (const id of ids) {
   // registry). To fork one, change `id` in its config.json (e.g. "meadow2"); to
   // truly replace a code map with its painted version, drop it from CODE_MAP_IDS.
   if (CODE_MAP_IDS.includes(id)) {
-    console.log(`↷ ${id}: code-built map — skipped (edit its id in ${id}.config.json to fork it)`);
+    console.log(`↷ ${id}: code-built map — skipped (rename the folder + config id to fork it)`);
     continue;
   }
-  const sidecar = JSON.parse(readFileSync(join(PAINT_DIR, `${id}.config.json`), 'utf8')) as MapSidecar;
-  const layers = { terrain: readLayer(join(PAINT_DIR, `${id}.terrain.png`)) } as Parameters<typeof compileMap>[0];
+  const dir = join(PAINT_DIR, id);
+  const sidecar = JSON.parse(readFileSync(join(dir, 'config.json'), 'utf8')) as MapSidecar;
+  if (sidecar.id !== id) {
+    console.log(`✗ ${id}: config.json says id "${sidecar.id}" but the folder is "${id}" — make them match`);
+    failed = true;
+    continue;
+  }
+  const layers = { terrain: readLayer(join(dir, 'terrain.png')) } as Parameters<typeof compileMap>[0];
   for (const kind of ['markers', 'regions'] as const) {
-    try { layers[kind] = readLayer(join(PAINT_DIR, `${id}.${kind}.png`)); } catch { /* optional layer */ }
+    try { layers[kind] = readLayer(join(dir, `${kind}.png`)); } catch { /* optional layer */ }
   }
   const result = compileMap(layers, sidecar, knownIds);
   for (const issue of result.issues) {
@@ -58,8 +65,8 @@ for (const id of ids) {
       const o = (p.y * layers.terrain.w + p.x) * 4;
       overlay.data[o] = 255; overlay.data[o + 1] = 0; overlay.data[o + 2] = 255; overlay.data[o + 3] = 255;
     }
-    writeFileSync(join(PAINT_DIR, `${id}.errors.png`), PNG.sync.write(overlay));
-    console.log(`✗ ${id}: NOT compiled — see ${PAINT_DIR}/${id}.errors.png`);
+    writeFileSync(join(PAINT_DIR, id, 'errors.png'), PNG.sync.write(overlay));
+    console.log(`✗ ${id}: NOT compiled — see ${PAINT_DIR}/${id}/errors.png`);
     continue;
   }
   const out = join(OUT_DIR, `${id}.json`);

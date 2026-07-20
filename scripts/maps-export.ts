@@ -1,5 +1,5 @@
 // Export any registered map (code-built or compiled) to painted-map PNGs +
-// sidecar in paintings/ — the editing loop: export → paint in MS Paint →
+// sidecar in paintings/<mapId>/ — the editing loop: export → paint in MS Paint →
 // npm run maps:compile.
 // Run: npm run maps:export -- <mapId>
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -16,16 +16,17 @@ if (!id || !MAPS[id]) {
 }
 
 const { layers, sidecar } = exportMap(MAPS[id]);
-mkdirSync('paintings', { recursive: true });
-const write = (suffix: string, layer: Layer): void => {
+const dir = join('paintings', id);
+mkdirSync(dir, { recursive: true });
+const write = (name: string, layer: Layer): void => {
   const png = new PNG({ width: layer.w, height: layer.h });
   png.data.set(layer.data);
-  const path = join('paintings', `${id}.${suffix}.png`);
+  const path = join(dir, `${name}.png`);
   writeFileSync(path, PNG.sync.write(png));
   console.log(`✓ ${path}`);
 };
 write('terrain', layers.terrain);
 if (layers.markers) write('markers', layers.markers);
 if (layers.regions) write('regions', layers.regions);
-writeFileSync(join('paintings', `${id}.config.json`), JSON.stringify(sidecar, null, 2));
-console.log(`✓ paintings/${id}.config.json`);
+writeFileSync(join(dir, 'config.json'), JSON.stringify(sidecar, null, 2));
+console.log(`✓ ${join(dir, 'config.json')}`);
