@@ -1,0 +1,42 @@
+{
+  "id": "meadow",
+  "name": "Whispering Meadow",
+  "spots": {
+    "20,37": {
+      "count": 2,
+      "radius": 1.5
+    },
+    "15,33": {
+      "count": 5,
+      "radius": 2.5
+    },
+    "31,33": {
+      "count": 5,
+      "radius": 2.5
+    },
+    "23,27": {
+      "count": 5,
+      "radius": 2.5
+    },
+    "11,20": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "36,21": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "34,15": {
+      "count": 3,
+      "radius": 2.5
+    },
+    "24,13": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "24,5": {
+      "count": 1,
+      "radius": 0.5
+    }
+  }
+}

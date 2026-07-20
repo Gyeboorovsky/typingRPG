@@ -31,6 +31,14 @@ const knownIds = [...CODE_MAP_IDS, ...ids];
 
 let failed = false;
 for (const id of ids) {
+  // Code-built maps export to paintings/ for VIEWING/EDITING — compiling them back
+  // would shadow the generator with a frozen snapshot (compiled JSON wins in the
+  // registry). To fork one, change `id` in its config.json (e.g. "meadow2"); to
+  // truly replace a code map with its painted version, drop it from CODE_MAP_IDS.
+  if (CODE_MAP_IDS.includes(id)) {
+    console.log(`↷ ${id}: code-built map — skipped (edit its id in ${id}.config.json to fork it)`);
+    continue;
+  }
   const sidecar = JSON.parse(readFileSync(join(PAINT_DIR, `${id}.config.json`), 'utf8')) as MapSidecar;
   const layers = { terrain: readLayer(join(PAINT_DIR, `${id}.terrain.png`)) } as Parameters<typeof compileMap>[0];
   for (const kind of ['markers', 'regions'] as const) {

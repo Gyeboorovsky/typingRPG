@@ -1,0 +1,102 @@
+{
+  "id": "steppes",
+  "name": "Sunfall Steppes",
+  "spots": {
+    "557,505": {
+      "count": 5,
+      "radius": 3
+    },
+    "32,505": {
+      "count": 6,
+      "radius": 3
+    },
+    "155,495": {
+      "count": 7,
+      "radius": 3
+    },
+    "650,638": {
+      "count": 5,
+      "radius": 3
+    },
+    "653,166": {
+      "count": 7,
+      "radius": 3
+    },
+    "117,142": {
+      "count": 5,
+      "radius": 3
+    },
+    "307,648": {
+      "count": 7,
+      "radius": 3
+    },
+    "723,506": {
+      "count": 7,
+      "radius": 3
+    },
+    "283,501": {
+      "count": 2,
+      "radius": 2.5
+    },
+    "110,308": {
+      "count": 4,
+      "radius": 3
+    },
+    "437,711": {
+      "count": 7,
+      "radius": 3
+    },
+    "105,707": {
+      "count": 9,
+      "radius": 3
+    },
+    "315,127": {
+      "count": 6,
+      "radius": 3
+    },
+    "284,264": {
+      "count": 9,
+      "radius": 3.5
+    },
+    "685,40": {
+      "count": 6,
+      "radius": 3
+    },
+    "206,36": {
+      "count": 5,
+      "radius": 3
+    },
+    "27,42": {
+      "count": 5,
+      "radius": 3
+    },
+    "446,275": {
+      "count": 8,
+      "radius": 3
+    },
+    "473,142": {
+      "count": 7,
+      "radius": 3
+    },
+    "702,747": {
+      "count": 5,
+      "radius": 3
+    },
+    "188,619": {
+      "count": 5,
+      "radius": 3
+    },
+    "567,16": {
+      "count": 7,
+      "radius": 3
+    },
+    "747,255": {
+      "count": 6,
+      "radius": 3
+    },
+    "555,725": {
+      "count": 6,
+      "radius": 3
+    }
+  }
+}

@@ -63,12 +63,17 @@ export const SPAWN_INK: Rgb = [255, 255, 0];
  *  Two portals to the same map with different landings = two entries. */
 export interface PortalInkDef { targetMap: string; targetPos: Vec2; name: string }
 export const PORTAL_INKS: PortalInkDef[] = [
-  { targetMap: 'meadow', targetPos: { x: 24, y: 41 }, name: 'Whispering Meadow' },     // G=0
-  { targetMap: 'elderwood', targetPos: { x: 76, y: 141 }, name: 'The Elderwood' },     // G=1
-  { targetMap: 'steppes', targetPos: { x: 380, y: 732 }, name: 'Sunfall Steppes' },    // G=2
-  { targetMap: 'highlands', targetPos: { x: 760, y: 1486 }, name: 'Ashen Highlands' }, // G=3
+  { targetMap: 'meadow', targetPos: { x: 24, y: 41 }, name: 'Whispering Meadow' },     // G=0 (plaza arrival)
+  { targetMap: 'elderwood', targetPos: { x: 76, y: 141 }, name: 'The Elderwood' },     // G=1 (entry glade)
+  { targetMap: 'steppes', targetPos: { x: 380, y: 732 }, name: 'Sunfall Steppes' },    // G=2 (south arrival)
+  { targetMap: 'highlands', targetPos: { x: 760, y: 1486 }, name: 'Ashen Highlands' }, // G=3 (south arrival)
   { targetMap: 'frontier', targetPos: { x: 1520, y: 3006 }, name: 'Frostreach Frontier' }, // G=4
   { targetMap: 'cellar', targetPos: { x: 22, y: 50 }, name: 'The Painted Cellar' },    // G=5
+  // Return-leg landings of the existing world chain (so every current map exports):
+  { targetMap: 'meadow', targetPos: { x: 26, y: 2 }, name: 'Whispering Meadow' },      // G=6 (behind the arena)
+  { targetMap: 'elderwood', targetPos: { x: 76, y: 17 }, name: 'The Elderwood' },      // G=7 (Rootfather basin)
+  { targetMap: 'steppes', targetPos: { x: 380, y: 24 }, name: 'Sunfall Steppes' },     // G=8 (north gate)
+  { targetMap: 'highlands', targetPos: { x: 760, y: 28 }, name: 'Ashen Highlands' },   // G=9 (north gate)
 ];
 
 /** Fixed defId order for legacy mob-spot inks (200,G,50). Index = G. NEVER

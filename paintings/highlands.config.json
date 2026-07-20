@@ -1,0 +1,142 @@
+{
+  "id": "highlands",
+  "name": "Ashen Highlands",
+  "spots": {
+    "473,711": {
+      "count": 5,
+      "radius": 3
+    },
+    "1389,374": {
+      "count": 7,
+      "radius": 3
+    },
+    "913,551": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "89,332": {
+      "count": 7,
+      "radius": 3
+    },
+    "241,1323": {
+      "count": 5,
+      "radius": 3
+    },
+    "1471,558": {
+      "count": 8,
+      "radius": 3
+    },
+    "361,338": {
+      "count": 5,
+      "radius": 3
+    },
+    "617,155": {
+      "count": 8,
+      "radius": 3
+    },
+    "1293,938": {
+      "count": 6,
+      "radius": 3
+    },
+    "45,547": {
+      "count": 5,
+      "radius": 3
+    },
+    "909,1009": {
+      "count": 7,
+      "radius": 3
+    },
+    "323,48": {
+      "count": 8,
+      "radius": 3
+    },
+    "801,1411": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "232,1098": {
+      "count": 7,
+      "radius": 3
+    },
+    "12,970": {
+      "count": 4,
+      "radius": 3
+    },
+    "764,302": {
+      "count": 7,
+      "radius": 3
+    },
+    "621,1094": {
+      "count": 8,
+      "radius": 3
+    },
+    "1417,1288": {
+      "count": 3,
+      "radius": 2.5
+    },
+    "1493,166": {
+      "count": 8,
+      "radius": 3
+    },
+    "277,804": {
+      "count": 3,
+      "radius": 3
+    },
+    "1173,767": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "1118,1135": {
+      "count": 5,
+      "radius": 3
+    },
+    "539,1273": {
+      "count": 5,
+      "radius": 3
+    },
+    "1174,234": {
+      "count": 5,
+      "radius": 3
+    },
+    "436,1029": {
+      "count": 4,
+      "radius": 3
+    },
+    "634,525": {
+      "count": 6,
+      "radius": 3
+    },
+    "1220,1315": {
+      "count": 5,
+      "radius": 3
+    },
+    "1037,389": {
+      "count": 7,
+      "radius": 3
+    },
+    "801,721": {
+      "count": 6,
+      "radius": 3
+    },
+    "53,749": {
+      "count": 7,
+      "radius": 3
+    },
+    "257,554": {
+      "count": 3,
+      "radius": 2.5
+    },
+    "449,1495": {
+      "count": 6,
+      "radius": 3
+    },
+    "1241,40": {
+      "count": 4,
+      "radius": 3
+    },
+    "1455,821": {
+      "count": 4,
+      "radius": 3
+    }
+  }
+}

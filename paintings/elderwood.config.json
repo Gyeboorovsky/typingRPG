@@ -1,0 +1,78 @@
+{
+  "id": "elderwood",
+  "name": "The Elderwood",
+  "spots": {
+    "44,124": {
+      "count": 5,
+      "radius": 2.5
+    },
+    "48,120": {
+      "count": 3,
+      "radius": 2.5
+    },
+    "108,124": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "104,128": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "76,104": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "42,96": {
+      "count": 3,
+      "radius": 2.5
+    },
+    "44,88": {
+      "count": 3,
+      "radius": 2
+    },
+    "114,94": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "118,90": {
+      "count": 2,
+      "radius": 2
+    },
+    "52,68": {
+      "count": 5,
+      "radius": 2.5
+    },
+    "48,72": {
+      "count": 4,
+      "radius": 2.5
+    },
+    "100,64": {
+      "count": 3,
+      "radius": 2.5
+    },
+    "96,60": {
+      "count": 3,
+      "radius": 2.5
+    },
+    "76,44": {
+      "count": 3,
+      "radius": 2.5
+    },
+    "72,48": {
+      "count": 2,
+      "radius": 2
+    },
+    "76,20": {
+      "count": 1,
+      "radius": 0.5
+    },
+    "70,24": {
+      "count": 2,
+      "radius": 1.5
+    },
+    "82,24": {
+      "count": 2,
+      "radius": 1.5
+    }
+  }
+}
