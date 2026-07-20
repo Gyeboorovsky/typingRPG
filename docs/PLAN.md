@@ -13,40 +13,42 @@ feature file: `[ ]` todo → `[I]` implemented → `[V]` user-verified.
 
 ## Active
 
-0. **World expansion (experiment)** — `[I]` implemented 2026-07-19, awaiting the
-   user's live review/`[V]`. Round 1: the Elderwood (152×152, 5 new mobs, Rootfather)
-   + walk-up portals + chunked terrain. Round 2 (user feedback): open-world generator
-   with reusable structures + three Metin2-style maps (Sunfall Steppes 760²,
-   Ashen Highlands 1520², Frostreach Frontier 3040² with BOTH bosses), Stone Golem,
-   portal chain, lazy map builds, renderer scaling (prefetch + bucketing — the
-   stutter fix). Decisions in `docs/decisions.md` → "Second map & portals" and
-   "World expansion".
-
 1. **Combat rework** — `in-progress` — `docs/open/combat-rework-scope.md`.
    ALL questions answered 2026-07-19; decisions locked in `docs/decisions.md`.
    **Stage A (mob damage model + aggro) and Stage B (ring + streak + exit-reset)
-   are `[I]` implemented (commits `fcd361e`, `4e97010`; 147 tests green) —
+   are `[I]` implemented (commits `fcd361e`, `4e97010`; tests green) —
    awaiting the user's manual `[V]` pass** (checklist in the scope file).
    Stage C (targeting, with bow) and Stage D (weapon styles) later.
 
-0b. **Painted-map pipeline (experiment round 3)** — `[I]` implemented 2026-07-20,
-   awaiting `[V]`. Paint maps in MS Paint (1 px = 1 tile, PNG layers) → linter +
-   compiler → the game auto-loads compiled JSON; exporter, palette card, mob GROUPS
-   with rotating spawns, safe zones, structures, demo dungeon (The Painted Cellar),
-   preview tool (`preview.html`). How-to + statuses: `docs/open/map-pipeline.md`.
+2. **World expansion (experiment)** — `[I]` implemented 2026-07-19/20, awaiting
+   the user's live review/`[V]`. Three rounds: (1) the Elderwood (152×152, 5 new
+   mobs, Rootfather boss) + walk-up portals + chunked terrain; (2) user feedback
+   → open-world generator with reusable structures + three Metin2-style maps
+   (Sunfall Steppes 760², Ashen Highlands 1520², Frostreach Frontier 3040² with
+   BOTH bosses), Stone Golem, portal chain, renderer scaling (prefetch + bucketing
+   — the original stutter fix); (3) the **painted-map pipeline** — paint maps in
+   MS Paint (1 px = 1 tile, PNG layers) → linter + compiler → the game auto-loads
+   compiled JSON; exporter, palette card, mob GROUPS with rotating spawns, safe
+   zones, structures, demo dungeon (The Painted Cellar), preview tool
+   (`preview.html`); **meadow now hand-edited and rebuilt from its painting**
+   (commit `34ca63a`) — it loads from the compiled JSON, not the code generator.
+   Decisions: `docs/decisions.md` → "Second map & portals", "World expansion",
+   "Painted maps". How-to + status: `docs/open/map-pipeline.md`.
+   ⚠ Known issue on the three big open-world maps: micro-stutter, parked with a
+   diagnosis in `docs/bugs.md` (LRU thrash at `MAX_CHUNKS`) — not yet fixed.
 
 ## Backlog (suggested order)
 
-2. **Security hardening** — `planning` — `docs/open/security-hardening.md`.
+3. **Security hardening** — `planning` — `docs/open/security-hardening.md`.
    requires: —
    better-after: the combat rework's damage-model stage (`applySave` grows new fields
    there; validating once after the shape settles avoids doing it twice).
 
-3. **Accessibility** — `planning` — `docs/open/accessibility.md`.
+4. **Accessibility** — `planning` — `docs/open/accessibility.md`.
    requires: — (one open question: AltGr for Polish typists)
    better-after: — (independent; all items need manual [V] checks)
 
-4. **Code hygiene** — `planning` — `docs/open/code-hygiene.md`.
+5. **Code hygiene** — `planning` — `docs/open/code-hygiene.md`.
    requires: —
    better-after: combat rework, for the dead-constants section only (LEECH_* may be
    revived there) — the rest can go any time.
