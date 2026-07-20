@@ -118,7 +118,9 @@ you don't need to be asked.
 ## Commands
 
 `npm run dev` (web dev) · `npm test` (vitest, pure core) · `npm run build` ·
-`npx tauri dev` / `npx tauri build` (desktop, Tauri v2 in `src-tauri/`).
+`npx tauri dev` / `npx tauri build` (desktop, Tauri v2 in `src-tauri/`) ·
+painted maps: `npm run maps:compile` / `maps:export -- <id>` / `maps:palette`
+(see `docs/open/map-pipeline.md`; preview tool at `/typingRPG/preview.html` in dev).
 
 ## Hosting (must respect — this is what keeps it free)
 

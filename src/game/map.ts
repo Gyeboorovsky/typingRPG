@@ -3,13 +3,24 @@
 // mob chasing is straight-line (no pathfinding), so layouts stay corridor-and-
 // clearing shaped rather than true mazes.
 import type { PortalDef, SpawnSpot, Vec2 } from './types';
+import { decodeCompiledMap } from '../mapkit/format';
 import { rand } from './rng';
 import type { RngCarrier } from './rng';
 
-export const T_GRASS = 0, T_SAND = 1, T_WATER = 2, T_FOREST = 3, T_MOSS = 4, T_ASH = 5, T_SNOW = 6;
+export const T_GRASS = 0, T_SAND = 1, T_WATER = 2, T_FOREST = 3, T_MOSS = 4, T_ASH = 5, T_SNOW = 6,
+  T_STONE = 7, T_MOUNTAIN = 8, T_VOID = 9;
+// T_WATER/T_MOUNTAIN/T_VOID block everyone today; the painted-map model reserves
+// them for per-entity passability (swimming mobs, flying mounts over mountains —
+// see docs/open/map-pipeline.md). T_VOID renders black: "outside the map".
 
 export type PropKind = 'tree' | 'rock' | 'shroom';
 export interface Prop { x: number; y: number; kind: PropKind }
+
+// A painted-map mob group: `sites` are the POSSIBLE spawn points (the painted
+// pixels); at most `maxAlive` instances live at once; a new instance spawns at a
+// random FREE site every `respawnSeconds`. Composition comes from GROUPS
+// (game/groups.ts) via `groupIdx`.
+export interface GroupSpawnDef { groupIdx: number; sites: Vec2[]; respawnSeconds: number; maxAlive: number }
 
 export interface MapDef {
   id: string;
@@ -18,13 +29,23 @@ export interface MapDef {
   h: number;
   terrain: Uint8Array;
   blocked: Uint8Array;
+  regions?: Uint8Array; // painted zones (REGION_SAFE = no mob self-aggro); absent = none
   props: Prop[];  // visual objects; blocking is ALWAYS the `blocked` grid, not the prop
   waterTiles: Vec2[]; // precomputed at build time — the renderer's shimmer list
                       // (scanning 9M tiles per WorldIndex build caused a frame spike)
   spawn: Vec2;
   spots: SpawnSpot[];
+  groups?: GroupSpawnDef[]; // painted-map dynamic groups (code maps use `spots`)
   portals: PortalDef[];
 }
+
+/** Painted-region ids (mirrors mapkit/inks.ts REGION_*; duplicated here so the
+ *  pure sim never imports tooling). 0 = no region. */
+export const REGION_SAFE_ID = 1;
+
+/** Region id at a tile (0 outside the grid or when the map has no regions). */
+export const regionAt = (map: MapDef, x: number, y: number): number =>
+  !map.regions || x < 0 || y < 0 || x >= map.w || y >= map.h ? 0 : map.regions[y * map.w + x];
 
 /** One full-grid pass collecting water tiles — paid once at map BUILD time (maps
  *  build lazily off the render path), so the renderer never scans the grid. */
@@ -108,6 +129,8 @@ function buildMeadow(): MapDef {
     // so reaching (and channeling!) it with the boss alive is a deliberate dare.
     portals: [
       { pos: { x: 24, y: 2 }, target: { mapId: 'elderwood', pos: { x: 76, y: 141 } }, name: 'Elderwood' },
+      // South of the plaza: the way down into the painted demo dungeon.
+      { pos: { x: 24, y: 43 }, target: { mapId: 'cellar', pos: { x: 22, y: 50 } }, name: 'The Painted Cellar' },
     ],
   };
 }
@@ -617,6 +640,15 @@ const MAP_BUILDERS: Record<string, () => MapDef> = {
   highlands: buildHighlands,
   frontier: buildFrontier,
 };
+
+// Painted maps: every compiled JSON in maps-compiled/ self-registers (id from the
+// file's contents). The game never reads PNGs — only this compiled output.
+const compiled = import.meta.glob('./maps-compiled/*.json', { eager: true }) as
+  Record<string, { default: import('../mapkit/format').CompiledMap }>;
+for (const mod of Object.values(compiled)) {
+  const c = mod.default;
+  MAP_BUILDERS[c.id] = () => decodeCompiledMap(c);
+}
 const mapCache: Record<string, MapDef> = {};
 export const MAPS: Record<string, MapDef> = {};
 for (const id of Object.keys(MAP_BUILDERS))

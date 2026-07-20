@@ -299,7 +299,9 @@ export function damageMob(state: GameState, m: Mob, dmg: number): boolean {
 function killMob(state: GameState, m: Mob): void {
   const def = MOBS[m.defId];
   state.mobs.splice(state.mobs.indexOf(m), 1);
-  state.spots[m.spotIdx].pending.push(respawnDelayFor(def));
+  // Group mobs carry a synthetic NEGATIVE spotIdx — their respawn is the group
+  // cooldown (game/groups.ts), never the per-spot queue.
+  if (m.spotIdx >= 0) state.spots[m.spotIdx].pending.push(respawnDelayFor(def));
   if (def.xp > 0) { // training targets (xp 0) grant nothing and skip the floating XP number
     state.fx.push({ kind: 'xp', pos: { ...m.pos }, value: def.xp });
     grantXp(state, def.xp);

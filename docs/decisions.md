@@ -357,6 +357,52 @@ route around) + scroll stutter. Delegated decisions:
   at map build. Measured on the 3040² map: median 0.1 ms, p95 0.5 ms, zero >16 ms
   frames at 3× sprint speed; ~300 mobs sim tick 0.25 ms.
 
+## Painted maps — the map-making pipeline (locked 2026-07-20)
+
+User's design, refined together; implementation delegated:
+
+- **Maps are painted in MS Paint: 1 pixel = 1 tile**, image size = map size, any
+  shape — **RGB(0,0,0) = void** (rendered black, absolutely impassable → dungeons).
+  Painting space is the flat top-down grid; the renderer supplies the isometric view
+  (no data rotation). **PNG only** (lossless); JPG rejected (lossy re-encoding breaks
+  exact color matching).
+- **Layers as separate files:** `<id>.terrain.png` + `<id>.markers.png` (black =
+  nothing; markers never destroy terrain info) + optional `<id>.regions.png`.
+- **Ink registry** (`src/mapkit/inks.ts`) = the global config: every current and
+  future element has an exact color, namespaced by CHANNEL rules (portals R=255
+  B=200 w/ G=entry index; groups B=255 w/ G=group index; structures R=255 B=0;
+  fixed spots R=200 B=50; spawn 255,255,0). **PORTAL_INKS is the global portal
+  section**: each entry = one concrete destination (map + landing + name).
+  A generated **palette card** (`npm run maps:palette`) is the eyedropper source.
+- **Mob groups:** painted pixels are POSSIBLE spawn sites; composition lives in the
+  global `GROUPS` registry; per-map sidecar sets `respawnSeconds` + `maxAlive`;
+  a new instance spawns at a random FREE site (an instance holds its site until its
+  last member dies). Groups may wander later (bounded by regions).
+- **Structures:** paint a footprint rectangle of a structure ink → the compiler
+  stamps the real thing (bridge, arena ring) from the reusable `STRUCTURES`
+  registry. Map-independent by construction.
+- **Terrain classes over binary blocked:** water/mountain/void are movement classes;
+  today everything treats them as blocked, but the data model reserves per-entity
+  passability (swimming mobs at per-mob speeds, flying over mountains with a visual
+  size-up, player mount states). Runtime for that is future work.
+- **Compilation happens OUTSIDE the game** (`npm run maps:compile`): linter (unknown
+  colors with coordinates + nearest-ink suggestion, `errors.png` overlay with magenta
+  offenders, reachability flood from spawn, sidecar validation) → on success a
+  compiled JSON (RLE grids + source hash) in `src/game/maps-compiled/`, which the
+  game (and a future server, at ITS start) loads directly. **PNGs need not be kept**
+  — the exporter (`npm run maps:export -- <id>`) regenerates them from any map;
+  edit loop = export → paint → compile. Meadow round-trips byte-for-byte (test).
+- **Regions:** painted zones; SAFE (no mob self-aggro while the player stands
+  inside; attacking from safety still answers) implemented; level/PvP/music zones
+  reserved.
+- **Preview tool** (`preview.html`): the REAL renderer with no player/sim — map
+  picker, drag-pan, wheel-zoom, labels, mobs shown on every possible spawn site.
+- **Rejected:** hot-reload of maps (MMO: maps load at server start); minimap derived
+  from the painted PNG (ugly + marker colors ≠ game colors — a real minimap comes
+  later from game data).
+- Demo map: **The Painted Cellar** (portal south of the meadow plaza) — the living
+  example of every feature; `paintings/cellar.*` are the reference files.
+
 ## Still open / deferred (everything else combat-related is decided above)
 
 - Sword mode-set design (4 slots, one behavior today), wand & grimoire specifics,

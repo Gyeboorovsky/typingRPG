@@ -29,6 +29,12 @@ feature file: `[ ]` todo → `[I]` implemented → `[V]` user-verified.
    awaiting the user's manual `[V]` pass** (checklist in the scope file).
    Stage C (targeting, with bow) and Stage D (weapon styles) later.
 
+0b. **Painted-map pipeline (experiment round 3)** — `[I]` implemented 2026-07-20,
+   awaiting `[V]`. Paint maps in MS Paint (1 px = 1 tile, PNG layers) → linter +
+   compiler → the game auto-loads compiled JSON; exporter, palette card, mob GROUPS
+   with rotating spawns, safe zones, structures, demo dungeon (The Painted Cellar),
+   preview tool (`preview.html`). How-to + statuses: `docs/open/map-pipeline.md`.
+
 ## Backlog (suggested order)
 
 2. **Security hardening** — `planning` — `docs/open/security-hardening.md`.

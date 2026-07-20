@@ -5,7 +5,7 @@ import {
   BOSS_RESPAWN_SECONDS, LEASH_DIST, MOB_RADIUS, MOB_SEPARATION, MOB_STOP_DIST,
   PACK_LINK_RADIUS, RANGED_APPROACH_MARGIN, RESPAWN_MIN_PLAYER_DIST, RESPAWN_SECONDS,
 } from './constants';
-import { circleBlocked, findFreeNear, mapOf } from './map';
+import { circleBlocked, findFreeNear, mapOf, regionAt, REGION_SAFE_ID } from './map';
 import type { MapDef } from './map';
 import type { GameState, Mob, MobDef, Vec2 } from './types';
 import { dist, playerWorldPos } from './types';
@@ -253,11 +253,14 @@ export function aggroMob(state: GameState, m: Mob): void {
 export function mobStep(state: GameState, dt: number): void {
   const pp = playerWorldPos(state.player);
   const map = mapOf(state);
+  // Painted safe zones: while the player stands inside one, nothing self-aggroes
+  // (damage-aggro still works — attack from safety and they WILL answer).
+  const playerSafe = regionAt(map, Math.round(pp.x), Math.round(pp.y)) === REGION_SAFE_ID;
   for (const m of state.mobs) {
     const def = MOBS[m.defId];
     if (m.state === 'idle') {
       // Passive mobs (aggressive === false) never self-aggro — they can only be pulled.
-      if (!state.player.dead && def.aggressive !== false && dist(m.pos, pp) <= def.aggroRadius) aggroMob(state, m);
+      if (!state.player.dead && !playerSafe && def.aggressive !== false && dist(m.pos, pp) <= def.aggroRadius) aggroMob(state, m);
     } else if (m.state === 'aggro') {
       if (state.player.dead || dist(m.pos, m.home) > LEASH_DIST) {
         m.state = 'leash'; m.target = null; m.pendingOnMiss = null;

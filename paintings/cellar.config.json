@@ -1,0 +1,20 @@
+{
+  "id": "cellar",
+  "name": "The Painted Cellar",
+  "spots": {
+    "33,6": {
+      "count": 1,
+      "radius": 0.5
+    }
+  },
+  "groups": {
+    "1": {
+      "respawnSeconds": 15,
+      "maxAlive": 2
+    },
+    "3": {
+      "respawnSeconds": 20,
+      "maxAlive": 2
+    }
+  }
+}

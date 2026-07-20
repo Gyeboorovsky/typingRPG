@@ -7,12 +7,17 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "maps:compile": "vite-node scripts/maps-compile.ts",
+    "maps:export": "vite-node scripts/maps-export.ts",
+    "maps:palette": "vite-node scripts/maps-palette.ts"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
     "@tauri-apps/cli": "^2.11.4",
     "@types/node": "^26.1.1",
+    "@types/pngjs": "^6.0.5",
+    "pngjs": "^7.0.0",
     "typescript": "^5.8.0",
     "vite": "^7.0.0",
     "vitest": "^3.2.0"

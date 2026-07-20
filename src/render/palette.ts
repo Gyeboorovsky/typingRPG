@@ -7,6 +7,9 @@ export const PAL = {
   mossA: '#4f9455', mossB: '#488b4e',     // clearing floors — a touch lighter than forest
   ashA: '#6e6a63', ashB: '#66625b',       // Ashen Highlands ground
   snowA: '#d8e2ea', snowB: '#cfdae4',     // Frostreach Frontier ground
+  stoneA: '#7e7e8a', stoneB: '#767682',   // dungeon stone floor
+  mountainA: '#7a6250', mountainB: '#6e5847', // impassable highland (fly-over later)
+  voidTile: '#000000',                    // outside the painted map
   tileEdge: 'rgba(0,0,0,0.08)',
   treeTrunk: '#7a5230', treeLeafA: '#2e7d4f', treeLeafB: '#266b43',
   rockA: '#8d8d99', rockB: '#72727e',

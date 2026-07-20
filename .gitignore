@@ -4,3 +4,6 @@ src-tauri/target/
 src-tauri/gen/
 *.local
 .claude/worktrees/
+
+# painted-map linter output (regenerated on every failed compile)
+paintings/*.errors.png

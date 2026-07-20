@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Typing RPG — Map Preview</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #101014; font-family: system-ui, sans-serif; }
+    #bar {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 2;
+      display: flex; gap: 10px; align-items: center; padding: 8px 12px;
+      background: rgba(20, 20, 26, 0.92); color: #ddd; font-size: 13px;
+      border-bottom: 1px solid #333;
+    }
+    #bar select { background: #2a2a33; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 3px 6px; }
+    #bar label { display: flex; gap: 5px; align-items: center; }
+    #view { display: block; width: 100vw; height: 100vh; cursor: grab; }
+    #view.dragging { cursor: grabbing; }
+  </style>
+</head>
+<body>
+  <div id="bar">
+    <strong>Map preview</strong>
+    <select id="map-select"></select>
+    <label><input type="checkbox" id="labels-toggle" checked /> labels</label>
+    <span id="info"></span>
+    <span style="margin-left:auto; opacity:.6">drag = pan · wheel = zoom</span>
+  </div>
+  <canvas id="view"></canvas>
+  <script type="module" src="/src/preview.ts"></script>
+</body>
+</html>

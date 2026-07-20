@@ -30,11 +30,16 @@ export function drawTileBase(
   else if (terrain === 4) fill = alt ? PAL.mossA : PAL.mossB;     // clearing moss
   else if (terrain === 5) fill = alt ? PAL.ashA : PAL.ashB;       // highland ash
   else if (terrain === 6) fill = alt ? PAL.snowA : PAL.snowB;     // frontier snow
+  else if (terrain === 7) fill = alt ? PAL.stoneA : PAL.stoneB;   // dungeon stone
+  else if (terrain === 8) fill = alt ? PAL.mountainA : PAL.mountainB; // mountain
+  else if (terrain === 9) fill = PAL.voidTile;                    // void: flat black, no edge
   diamond(ctx, sx, sy);
   ctx.fillStyle = fill;
   ctx.fill();
-  ctx.strokeStyle = PAL.tileEdge;
-  ctx.stroke();
+  if (terrain !== 9) { // void tiles merge into featureless black
+    ctx.strokeStyle = PAL.tileEdge;
+    ctx.stroke();
+  }
 }
 
 /** Gentle animated shimmer on a water tile, drawn per frame over the terrain layer. */

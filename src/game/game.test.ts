@@ -332,12 +332,15 @@ describe('maps & portals (multi-map)', () => {
     return seen;
   };
 
-  it('every map: spawn free, every spot center and portal reachable from spawn', () => {
+  it('every map: spawn free, every spot/group site and portal reachable from spawn', () => {
     for (const m of Object.values(MAPS)) {
       expect(isBlocked(m, Math.round(m.spawn.x), Math.round(m.spawn.y)), `${m.id} spawn`).toBe(false);
       const seen = flood(m);
       for (const s of m.spots)
         expect(seen[Math.round(s.center.y) * m.w + Math.round(s.center.x)], `${m.id} spot ${s.defId}@${s.center.x},${s.center.y}`).toBe(1);
+      for (const g of m.groups ?? [])
+        for (const site of g.sites)
+          expect(seen[site.y * m.w + site.x], `${m.id} group site @${site.x},${site.y}`).toBe(1);
       for (const p of m.portals) {
         expect(seen[Math.round(p.pos.y) * m.w + Math.round(p.pos.x)], `${m.id} portal ${p.name}`).toBe(1);
         const target = MAPS[p.target.mapId];
@@ -429,6 +432,60 @@ describe('maps & portals (multi-map)', () => {
     expect(s.mode).toBe('travel');
     expect(s.player.streak).toBe(0);
     expect(s.player.attackRanges).toEqual({});
+  });
+
+  it('painted cellar: void-shaped dungeon with groups, safe zone and a bridge', () => {
+    const m = MAPS.cellar;
+    expect(m.w).toBe(44);
+    expect(isBlocked(m, 0, 0), 'void corner is blocked').toBe(true);
+    expect(m.regions).toBeDefined();
+    expect(m.groups).toHaveLength(2);
+    expect(isBlocked(m, 22, 38), 'bridge over the channel is walkable').toBe(false);
+    expect(isBlocked(m, 20, 38), 'channel beside the bridge is water').toBe(true);
+  });
+
+  it('groups spawn up to maxAlive on entry and rotate to a free site after the cooldown', () => {
+    const s = newGame(11);
+    s.player.godmode = true;
+    s.player.pos = { ...MAPS.meadow.portals[1].pos }; // the cellar portal
+    for (let i = 0; i < Math.ceil(PORTAL_CHANNEL_SECONDS / SIM_DT) + 5; i++) update(s, [], SIM_DT);
+    expect(s.mapId).toBe('cellar');
+    const grouped = s.mobs.filter((m) => m.groupDef !== undefined);
+    expect(grouped.length).toBeGreaterThan(0);
+    for (const [defIdx, g] of MAPS.cellar.groups!.entries()) {
+      const sites = new Set(s.mobs.filter((m) => m.groupDef === defIdx).map((m) => m.groupSite));
+      expect(sites.size, `group ${defIdx} instances`).toBe(g.maxAlive);
+    }
+    // wipe one whole slime_drift instance (groupDef 0 in map order) → site frees…
+    const target = s.mobs.find((m) => m.groupDef === 0)!;
+    const instance = s.mobs.filter((m) => m.groupDef === 0 && m.groupSite === target.groupSite);
+    for (const m of instance) damageMob(s, m, 99999);
+    const aliveNow = new Set(s.mobs.filter((m) => m.groupDef === 0).map((m) => m.groupSite));
+    expect(aliveNow.size).toBe(MAPS.cellar.groups![0].maxAlive - 1);
+    // …and after the cooldown a NEW instance appears at some free site
+    const cd = MAPS.cellar.groups![0].respawnSeconds;
+    for (let i = 0; i < Math.ceil(cd / SIM_DT) + 5; i++) update(s, [], SIM_DT);
+    const after = new Set(s.mobs.filter((m) => m.groupDef === 0).map((m) => m.groupSite));
+    expect(after.size).toBe(MAPS.cellar.groups![0].maxAlive);
+  });
+
+  it('standing in a painted SAFE zone suppresses proximity aggro (damage still aggroes)', () => {
+    const s = newGame(11);
+    s.mapId = 'cellar';
+    s.mobs = [];
+    applySave(s, JSON.parse(JSON.stringify(makeSave(s))) as SaveData); // clean re-init on cellar
+    s.mobs = [];
+    const golem = {
+      id: 900, defId: 'stone_golem', pos: { x: 23, y: 50 }, hp: MOBS.stone_golem.hp,
+      state: 'idle', spotIdx: 0, home: { x: 23, y: 50 }, shield: false, shieldsUsed: 0,
+      target: null, physT: 999, magT: 999, onMissCd: 0, pendingOnMiss: null,
+    } as Mob;
+    s.mobs.push(golem);
+    s.player.pos = { x: 22, y: 50 }; // inside the painted safe zone, well within aggroRadius
+    update(s, [], SIM_DT);
+    expect(golem.state).toBe('idle'); // safe zone: no self-aggro
+    damageMob(s, golem, 1);
+    expect(golem.state).toBe('aggro'); // attacking from safety still answers
   });
 
   it('mapId round-trips through the save; unknown mapId falls back to the meadow', () => {

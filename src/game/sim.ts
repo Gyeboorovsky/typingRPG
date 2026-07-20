@@ -8,6 +8,7 @@ import {
   PICKUP_RADIUS, PLAYER_RADIUS, PORTAL_CHANNEL_SECONDS, PORTAL_TRIGGER_RADIUS, XP_CURVE,
 } from './constants';
 import { exitFight, mobAttackStep, resolveKeystroke, stepCombatMeters, syncCombat, tryUltimate } from './combat';
+import { groupStep, initGroups } from './groups';
 import { addToInventory, cloneEquipment, emptyEquipment, firstFreeCell, ITEMS, itemSize, rectFree } from './items';
 import { circleBlocked, isBlocked, mapOf, MAPS } from './map';
 import { initMobs, mobStep, respawnStep } from './mobs';
@@ -27,22 +28,25 @@ export function newGame(seed: number, name = 'Hero', classId: ClassId = 'warrior
       streak: 0, typingIdle: 0, attackRanges: {},
     },
     mobs: [], drops: [], spots: MAPS[DEFAULT_MAP_ID].spots.map(() => ({ pending: [] })),
+    groupCd: [],
     combat: null, mode: 'travel', fireMode: 1, travelUnlocked: false, held: [], fx: [], bossKilled: false, dirty: false, nextId: 1,
   };
   state.player.hp = maxHp(state.player);
   state.player.mp = maxMp(state.player);
   initMobs(state);
+  initGroups(state);
   return state;
 }
 
-/** Rebuild the CURRENT map's world state (mobs, drops, respawn timers) from its
- *  spots. Runs on map entry (teleport) and on load — visits are ephemeral, only
- *  the player + mapId persist (single-player model; a server would own zones). */
+/** Rebuild the CURRENT map's world state (mobs, drops, respawn timers, groups)
+ *  from its spots. Runs on map entry (teleport) and on load — visits are
+ *  ephemeral, only the player + mapId persist (a server would own zones). */
 function resetWorld(state: GameState): void {
   state.mobs = [];
   state.drops = [];
   state.spots = mapOf(state).spots.map(() => ({ pending: [] }));
   initMobs(state);
+  initGroups(state);
 }
 
 /** Stand on a portal → the channel fills; step off → it cancels; full → teleport.
@@ -99,6 +103,7 @@ export function update(state: GameState, events: InputEvent[], dt: number): void
   mobStep(state, dt);
   mobAttackStep(state, dt); // mob offense: periodic channels + landing on-miss specials
   respawnStep(state, dt);
+  groupStep(state, dt);     // painted-map groups: rotate spawns among free sites
   stepPortals(state, dt);   // walk-up teleporters (3s channel)
   stepDrops(state, dt);
   syncCombat(state);

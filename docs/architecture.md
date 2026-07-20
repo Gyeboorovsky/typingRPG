@@ -60,6 +60,16 @@ roster, autosave throttle, unload flush), `backends.ts` (tauri fs / File System
 Access / localStorage + IndexedDB kv for the picked-file handle), `settings.ts`
 (device-wide keymap persistence).
 
+`src/mapkit/` (painted-map tooling — build-time, never bundled into gameplay):
+`inks.ts` (the global color registry incl. the PORTAL_INKS section), `compile.ts`
+(compiler + linter on raw RGBA buffers), `export.ts` (MapDef → paintable layers),
+`format.ts` (compiled RLE JSON ↔ MapDef), `structures.ts` (stampable structure
+registry), `rle.ts`. Scripts: `maps:compile` / `maps:export` / `maps:palette`
+(vite-node + pngjs). Painted sources live in `paintings/`, compiled output in
+`src/game/maps-compiled/*.json` (auto-registered via glob). `src/game/groups.ts` —
+group compositions + the rotating-spawn runtime. `preview.html` + `src/preview.ts` —
+the map preview tool (real render modules, no sim; pan/zoom/labels).
+
 `src-tauri/` — Tauri v2 desktop shell. `index.html` + `src/style.css` — DOM skeleton +
 all UI styling with `:root` design tokens (~50 tokens in 12 groups: surfaces, borders,
 text, accent, combat-state markers, resource bars, rarity/status, item tiers, radii,

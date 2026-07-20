@@ -99,6 +99,11 @@ export interface Mob {
   magT: number;         // seconds until the next magical blow
   onMissCd: number;     // seconds left of the on-miss cooldown (gates typo spam)
   pendingOnMiss: number | null; // scheduled on-miss special: seconds until it lands (null = none)
+  // Painted-map group membership (absent on classic spot mobs): which map-group
+  // definition + which spawn site this mob's instance occupies. The instance
+  // frees its site when its last member dies (see game/groups.ts).
+  groupDef?: number;
+  groupSite?: number;
 }
 
 export interface SpawnSpot { defId: string; center: Vec2; count: number; radius: number }
@@ -195,6 +200,7 @@ export interface GameState {
   mobs: Mob[];
   drops: GroundDrop[];
   spots: SpotState[];
+  groupCd: number[]; // per map-group respawn cooldowns (painted maps); transient, rebuilt on map entry
   combat: CombatState | null;
   mode: Mode;   // travel = free movement, no prompt; fight = typing-combat prompt shown
   fireMode: number; // selected bow fire mode (1..4); behavior wired later. Transient (not saved).
